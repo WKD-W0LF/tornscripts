@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Faction_Calls (Universal)
 // @namespace    twilight-reborn
-// @version      2.0.5
+// @version      2.0.6
 // @author       Leandria & Wolf (Universal: Bob)
 // @description  Shared target calls, priorities and assist requests for Twilight - Reborn [56966]. Optimized for all devices: mobile, tablet, and desktop.
 // @license      MIT
@@ -23,7 +23,10 @@
   const APP_NAME = "TWI Faction Calls";
   const API_BASE = "https://torn-calls.apps.gpu4.fusion.isys.hpc.dc.uq.edu.au/api/v1";
   const ALLOWED_FACTION_ID = 56966;
-  const POLL_MS = 2000;
+  // 5s poll — 2s was too aggressive for Android 16 Doze mode which coalesces
+  // short timers when the screen dims, causing stacked ticks to all fire at once
+  // on resume and overloading GM_xmlhttpRequest with concurrent requests.
+  const POLL_MS = 5000;
   const COUNTDOWN_MS = 1000;
   const PREFIX = "twi-faction-calls-";
 
@@ -78,12 +81,12 @@
   }
 
   function isWarPage() {
-    // Use DOM presence of .faction-war as the authoritative signal — Chrome does
-    // not reliably update location.hash when the user switches faction tabs via
-    // the SPA, so hash-only detection fires on the wrong tab in Chrome.
-    // We keep the pathname guard so the script never runs on other torn pages.
     if (!location.pathname.endsWith("/factions.php")) return false;
-    return Boolean(document.querySelector(".faction-war"));
+    // Primary: DOM presence of .faction-war (authoritative, works on Chrome/Firefox)
+    if (document.querySelector(".faction-war")) return true;
+    // Fallback: hash check for TornPDA Android — during its partial DOM swaps
+    // .faction-war is briefly absent while the hash still correctly says #/war/
+    return (location.hash || "").startsWith("#/war/");
   }
 
   function validSession() {
@@ -1032,18 +1035,28 @@
     }
   }, COUNTDOWN_MS);
 
-  // Polling — only run when enabled AND on the war page. The enabled check lives
-  // here at the trigger, not inside refreshCalls(), so the function stays reusable.
-  // We don't chain .then(scheduleRender) — refreshCalls already calls updateChip/
-  // updateSettingsPanel on completion; scheduleRender handles the row re-render
-  // separately via the existing warObserver, avoiding double renders.
+  // Polling — gated on enabled, war page, no in-flight auth, and page visibility.
+  // The visibility check prevents stacked Doze-coalesced ticks from all firing
+  // simultaneously when the user returns to TornPDA after backgrounding the app.
   setInterval(async () => {
     if (!isWarPage() || !state.enabled) return;
-    // Skip if authentication is already in progress to avoid piling up modals
     if (state.authenticating) return;
+    if (state.polling) return;
+    // Skip silently while the page is hidden — Android 16 Doze can queue up
+    // many ticks while backgrounded; we only want the first one on resume.
+    if (document.visibilityState === "hidden") return;
     await refreshCalls();
     scheduleRender();
   }, POLL_MS);
+
+  // On resume from background (Android Doze / app switch) — do one immediate
+  // refresh instead of waiting for the next coalesced interval tick.
+  document.addEventListener("visibilitychange", async () => {
+    if (document.visibilityState !== "visible") return;
+    if (!isWarPage() || !state.enabled || state.authenticating || state.polling) return;
+    await refreshCalls();
+    scheduleRender();
+  });
 
   window.addEventListener("hashchange", async () => {
     ensureUI();

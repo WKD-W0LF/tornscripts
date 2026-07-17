@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Faction_Calls (Universal)
 // @namespace    twilight-reborn
-// @version      2.0.3
+// @version      2.0.5
 // @author       Leandria & Wolf (Universal: Bob)
 // @description  Shared target calls, priorities and assist requests for Twilight - Reborn [56966]. Optimized for all devices: mobile, tablet, and desktop.
 // @license      MIT
@@ -334,16 +334,24 @@
   }
 
   async function refreshCalls() {
-    if (!state.enabled || state.polling || !isWarPage()) return;
+    // Guard: polling flag prevents concurrent requests; isWarPage() prevents
+    // running off the war tab. Do NOT gate on state.enabled here — that belongs
+    // at the call site. Gating here causes the poll loop to silently skip when
+    // enabled is toggled, losing the connection without any visible feedback.
+    if (state.polling || !isWarPage()) return;
     state.polling = true;
     try {
       const { data } = await authRequest("GET", "/calls");
       state.calls = new Map((data.calls || []).map((c) => [String(c.targetId), c]));
       state.connected = true;
       state.lastError = "";
+      updateChip();
+      updateSettingsPanel();
     } catch (error) {
       state.connected = false;
       state.lastError = error.message;
+      updateChip();
+      updateSettingsPanel();
     } finally {
       state.polling = false;
     }
@@ -879,32 +887,38 @@
     .twi-key-cancel{background:#555}
     .twi-key-save{background:#2f9e44}
 
-    /* ── Mobile (≤900px): compact button pinned to top-right of the li row ── */
-    /* Does NOT add height to the row — floats over the stats area instead.   */
+    /* ── Mobile (≤900px): same absolute-below-name approach as desktop ── */
+    /* padding-bottom on li reserves space; button sits below .member     */
     @media(max-width:900px){
       .members-list li.enemy{
-        position:relative!important;overflow:visible!important
+        position:relative!important;
+        padding-bottom:18px!important;
+        box-sizing:border-box!important;
+        overflow:visible!important
       }
+      .members-list li .member{position:relative!important;overflow:visible!important}
       .twi-call-control{
-        position:absolute!important;top:4px!important;right:4px!important;
+        position:absolute!important;
+        top:100%!important;left:0!important;
+        margin-top:1px!important;
         display:inline-flex!important;flex-wrap:nowrap!important;
         align-items:center!important;gap:3px!important;
         z-index:9!important;padding:0!important
       }
       .twi-call-main{
-        height:20px!important;min-height:20px!important;min-width:44px!important;
-        padding:2px 6px!important;gap:3px!important;
-        font-size:10px!important;border-radius:4px!important
+        height:16px!important;min-height:16px!important;min-width:42px!important;
+        padding:1px 5px!important;gap:3px!important;
+        font-size:9px!important;border-radius:3px!important
       }
-      .twi-state-dot{width:7px!important;height:7px!important;min-width:7px!important}
+      .twi-state-dot{width:6px!important;height:6px!important;min-width:6px!important}
       .twi-call-meta{max-width:52px!important;font-size:8px!important}
       .twi-call-actions{display:inline-flex!important;flex:0 0 auto!important;gap:2px!important}
       .twi-call-actions[hidden]{display:none!important}
       .twi-flag{
-        width:20px!important;min-width:20px!important;
-        height:20px!important;padding:0!important;border-radius:4px!important
+        width:16px!important;min-width:16px!important;
+        height:16px!important;padding:0!important;border-radius:3px!important
       }
-      .twi-flag-icon{width:12px!important;height:12px!important}
+      .twi-flag-icon{width:10px!important;height:10px!important}
       .twi-sort-toggle-checkbox{width:20px!important;height:20px!important}
       .twi-sort-toggle-label{font-size:15px!important;gap:8px!important}
       .twi-settings-input{font-size:16px!important}
@@ -1018,8 +1032,18 @@
     }
   }, COUNTDOWN_MS);
 
-  // Polling
-  setInterval(() => { if (isWarPage() && state.enabled) refreshCalls().then(scheduleRender); }, POLL_MS);
+  // Polling — only run when enabled AND on the war page. The enabled check lives
+  // here at the trigger, not inside refreshCalls(), so the function stays reusable.
+  // We don't chain .then(scheduleRender) — refreshCalls already calls updateChip/
+  // updateSettingsPanel on completion; scheduleRender handles the row re-render
+  // separately via the existing warObserver, avoiding double renders.
+  setInterval(async () => {
+    if (!isWarPage() || !state.enabled) return;
+    // Skip if authentication is already in progress to avoid piling up modals
+    if (state.authenticating) return;
+    await refreshCalls();
+    scheduleRender();
+  }, POLL_MS);
 
   window.addEventListener("hashchange", async () => {
     ensureUI();

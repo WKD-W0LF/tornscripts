@@ -8,6 +8,8 @@
 // @match        https://www.torn.com/factions.php*
 // @match        https://torn.com/factions.php*
 // @run-at       document-idle
+// @downloadURL  https://raw.githubusercontent.com/WKD-W0LF/tornscripts/main/TWI_Faction_Calls_Android_Debug_v1.0.11.user.js
+// @updateURL    https://raw.githubusercontent.com/WKD-W0LF/tornscripts/main/TWI_Faction_Calls_Android_Debug_v1.0.11.user.js
 // ==/UserScript==
 
 // v1.0.11 — Grant-free build for TornPDA Android 16

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Faction_Calls (Universal)
 // @namespace    twilight-reborn
-// @version      2.0.6
+// @version      2.0.7
 // @author       Leandria & Wolf (Universal: Bob)
 // @description  Shared target calls, priorities and assist requests for Twilight - Reborn [56966]. Optimized for all devices: mobile, tablet, and desktop.
 // @license      MIT
@@ -23,10 +23,11 @@
   const APP_NAME = "TWI Faction Calls";
   const API_BASE = "https://torn-calls.apps.gpu4.fusion.isys.hpc.dc.uq.edu.au/api/v1";
   const ALLOWED_FACTION_ID = 56966;
-  // 5s poll — 2s was too aggressive for Android 16 Doze mode which coalesces
-  // short timers when the screen dims, causing stacked ticks to all fire at once
-  // on resume and overloading GM_xmlhttpRequest with concurrent requests.
-  const POLL_MS = 5000;
+  // 15s poll = 4 calls/min per device.
+  // At 20 active users that is 80 calls/min to the server — within the 90/min limit.
+  // All refresh triggers (interval, visibilitychange, hashchange) share the same
+  // lastPollTime gate so no combination of events can exceed this rate.
+  const POLL_MS = 15000;
   const COUNTDOWN_MS = 1000;
   const PREFIX = "twi-faction-calls-";
 
@@ -1035,34 +1036,40 @@
     }
   }, COUNTDOWN_MS);
 
-  // Polling — gated on enabled, war page, no in-flight auth, and page visibility.
-  // The visibility check prevents stacked Doze-coalesced ticks from all firing
-  // simultaneously when the user returns to TornPDA after backgrounding the app.
-  setInterval(async () => {
-    if (!isWarPage() || !state.enabled) return;
-    if (state.authenticating) return;
-    if (state.polling) return;
-    // Skip silently while the page is hidden — Android 16 Doze can queue up
-    // many ticks while backgrounded; we only want the first one on resume.
-    if (document.visibilityState === "hidden") return;
-    await refreshCalls();
-    scheduleRender();
-  }, POLL_MS);
+  // Shared rate-limit gate — all refresh triggers check this so no combination
+  // of interval + visibilitychange + hashchange can exceed 1 call per POLL_MS.
+  let lastPollTime = 0;
 
-  // On resume from background (Android Doze / app switch) — do one immediate
-  // refresh instead of waiting for the next coalesced interval tick.
-  document.addEventListener("visibilitychange", async () => {
-    if (document.visibilityState !== "visible") return;
-    if (!isWarPage() || !state.enabled || state.authenticating || state.polling) return;
+  function pollDue() {
+    return Date.now() - lastPollTime >= POLL_MS;
+  }
+
+  async function throttledRefresh() {
+    if (!isWarPage() || !state.enabled) return;
+    if (state.authenticating || state.polling) return;
+    if (document.visibilityState === "hidden") return;
+    if (!pollDue()) return;
+    lastPollTime = Date.now();
     await refreshCalls();
     scheduleRender();
+  }
+
+  // Interval — drives steady-state polling at POLL_MS cadence.
+  setInterval(throttledRefresh, POLL_MS);
+
+  // On resume from background — fire immediately instead of waiting for next tick.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") throttledRefresh();
   });
 
   window.addEventListener("hashchange", async () => {
     ensureUI();
     if (isWarPage()) {
       attachWarObserver();
-      if (state.enabled) { await authenticate(); await refreshCalls(); }
+      if (state.enabled) { await authenticate(); }
+      // Honour the rate limit on tab switch too — avoids a burst if the user
+      // rapidly switches back and forth between war and other faction tabs.
+      throttledRefresh();
       scheduleRender(0);
     } else {
       updateChip();

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Faction_Calls (Universal)
 // @namespace    twilight-reborn
-// @version      2.0.16
+// @version      2.0.17
 // @author       Leandria & Wolf (Universal: Bob)
 // @description  Shared target calls, priorities and assist requests for Twilight - Reborn [56966]. Optimized for all devices: mobile, tablet, and desktop.
 // @license      MIT
@@ -432,14 +432,16 @@
   }
 
   // Non-admin taking over an admin-placed call: DELETE with ?takeover=1 then claim.
-  // busy() is intentionally NOT called here — claim() owns the busy state end-to-end.
   async function takeover(row) {
+    console.log(`[TWI] takeover START id=${row.id}`);
     busy(row.id, true);
     try {
-      await authRequest("DELETE", `/calls/${encodeURIComponent(row.id)}?takeover=1`);
+      const resp = await authRequest("DELETE", `/calls/${encodeURIComponent(row.id)}?takeover=1`);
+      console.log(`[TWI] takeover DELETE ok`, resp);
       state.calls.delete(row.id);
       busy(row.id, false);
     } catch (error) {
+      console.log(`[TWI] takeover DELETE error status=${error.status} msg=${error.message}`, error.data);
       busy(row.id, false);
       if (error.status === 404) {
         state.calls.delete(row.id);
@@ -449,9 +451,10 @@
         return;
       }
     }
-    // Refresh the live row reference then claim
+    console.log(`[TWI] takeover calling claim id=${row.id}`);
     const live = targetRows().find((r) => r.id === row.id) || row;
     await claim(live);
+    console.log(`[TWI] takeover DONE id=${row.id} call=`, state.calls.get(row.id));
   }
 
   async function release(row, call, reason = "manual") {

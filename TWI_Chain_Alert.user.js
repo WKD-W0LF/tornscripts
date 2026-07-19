@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.1.1
+// @version      1.1.2
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Alerts at 5 hits from bonus, personalised banner for assigned hitters.
 // @license      MIT
@@ -421,53 +421,138 @@
     return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   }
 
+  // ── Faction member cache ───────────────────────────────────────────────────
+
+  // Sorted array of {id, name} — populated once per page load on first modal open.
+  let factionMemberCache = null;
+
+  function fetchFactionMembers(callback) {
+    if (factionMemberCache) { callback(factionMemberCache); return; }
+    GM_xmlhttpRequest({
+      method: "GET",
+      url: `${TORN_API_BASE}/v2/faction/members?key=${state.apiKey}`,
+      headers: { "Content-Type": "application/json" },
+      onload(response) {
+        let data;
+        try { data = JSON.parse(response.responseText || "{}"); } catch { callback([]); return; }
+        const raw = data?.members ?? data?.faction?.members ?? {};
+        const members = Object.entries(raw)
+          .map(([id, m]) => ({ id: String(id), name: String(m.name ?? m.player_name ?? id) }))
+          .sort((a, b) => a.name.localeCompare(b.name));
+        factionMemberCache = members;
+        callback(members);
+      },
+      onerror() { callback([]); }
+    });
+  }
+
   // ── Assign modal ───────────────────────────────────────────────────────────
 
   function openAssignModal(bonusNumber) {
     document.getElementById("twi-assign-modal")?.remove();
 
+    // Show a loading modal while we fetch members
     const modal = document.createElement("div");
     modal.id = "twi-assign-modal";
     modal.innerHTML = `
       <div id="twi-assign-modal-box">
         <h3>Assign Bonus ${bonusNumber}</h3>
-        <div class="twi-settings-row">
-          <label><strong>Player ID:</strong></label>
-          <input type="text" id="twi-assign-pid" class="twi-settings-input" placeholder="Torn player ID (numbers only)" />
-        </div>
-        <div class="twi-settings-row">
-          <label><strong>Player Name:</strong></label>
-          <input type="text" id="twi-assign-pname" class="twi-settings-input" placeholder="In-game name" />
+        <div id="twi-assign-modal-inner">
+          <p class="twi-assign-loading">Loading faction members…</p>
         </div>
         <div id="twi-assign-modal-error" style="color:#e74c3c;font-size:12px;min-height:16px;margin-bottom:8px;"></div>
         <div class="twi-settings-actions">
-          <button type="button" id="twi-assign-confirm" class="torn-btn twi-btn-save">Save</button>
+          <button type="button" id="twi-assign-confirm" class="torn-btn twi-btn-save" disabled>Save</button>
           <button type="button" id="twi-assign-cancel" class="torn-btn twi-btn-secondary">Cancel</button>
         </div>
       </div>`;
 
     document.body.appendChild(modal);
-
-    // Pre-fill if already assigned
-    const existing = state.assignments.get(bonusNumber);
-    if (existing) {
-      modal.querySelector("#twi-assign-pid").value = existing.playerId;
-      modal.querySelector("#twi-assign-pname").value = existing.playerName;
-    }
-
     modal.querySelector("#twi-assign-cancel").addEventListener("click", () => modal.remove());
     modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
 
-    modal.querySelector("#twi-assign-confirm").addEventListener("click", () => {
-      const pid   = modal.querySelector("#twi-assign-pid").value.trim();
-      const pname = modal.querySelector("#twi-assign-pname").value.trim();
-      const errEl = modal.querySelector("#twi-assign-modal-error");
-      if (!/^\d+$/.test(pid)) { errEl.textContent = "Player ID must be numeric."; return; }
-      if (!pname) { errEl.textContent = "Player name is required."; return; }
-      errEl.textContent = "";
-      putAssignment(bonusNumber, pid, pname, err => {
-        if (err) { errEl.textContent = `Error: ${err}`; }
-        else { modal.remove(); }
+    fetchFactionMembers(members => {
+      const inner  = modal.querySelector("#twi-assign-modal-inner");
+      const errEl  = modal.querySelector("#twi-assign-modal-error");
+      const saveBtn = modal.querySelector("#twi-assign-confirm");
+
+      if (!members.length) {
+        inner.innerHTML = `<p style="color:#e74c3c;font-size:12px;">Could not load faction members. Check your API key has Faction access.</p>`;
+        return;
+      }
+
+      const existing = state.assignments.get(bonusNumber);
+
+      // Build searchable dropdown
+      inner.innerHTML = `
+        <div class="twi-settings-row">
+          <label><strong>Select Member:</strong></label>
+          <input
+            type="text"
+            id="twi-assign-search"
+            class="twi-settings-input"
+            placeholder="Type to filter…"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <div id="twi-assign-dropdown" class="twi-assign-dropdown"></div>
+          <input type="hidden" id="twi-assign-pid" />
+          <input type="hidden" id="twi-assign-pname" />
+          <div id="twi-assign-selected" class="twi-assign-selected-name"></div>
+        </div>`;
+
+      const searchEl   = modal.querySelector("#twi-assign-search");
+      const dropdownEl = modal.querySelector("#twi-assign-dropdown");
+      const pidEl      = modal.querySelector("#twi-assign-pid");
+      const pnameEl    = modal.querySelector("#twi-assign-pname");
+      const selectedEl = modal.querySelector("#twi-assign-selected");
+
+      // Pre-select existing assignment
+      if (existing) {
+        pidEl.value    = existing.playerId;
+        pnameEl.value  = existing.playerName;
+        selectedEl.textContent = `✓ ${existing.playerName}`;
+        saveBtn.disabled = false;
+      }
+
+      function renderDropdown(filter) {
+        const q = filter.toLowerCase();
+        const hits = members.filter(m => m.name.toLowerCase().includes(q) || m.id.includes(q));
+        if (!hits.length || !filter) { dropdownEl.style.display = "none"; return; }
+        dropdownEl.innerHTML = hits.slice(0, 20).map(m =>
+          `<div class="twi-assign-option" data-id="${m.id}" data-name="${escHtml(m.name)}">${escHtml(m.name)} <span class="twi-assign-optid">#${m.id}</span></div>`
+        ).join("");
+        dropdownEl.style.display = "block";
+        dropdownEl.querySelectorAll(".twi-assign-option").forEach(opt => {
+          opt.addEventListener("click", () => {
+            pidEl.value    = opt.dataset.id;
+            pnameEl.value  = opt.dataset.name;
+            searchEl.value = "";
+            selectedEl.textContent = `✓ ${opt.dataset.name}`;
+            dropdownEl.style.display = "none";
+            saveBtn.disabled = false;
+            errEl.textContent = "";
+          });
+        });
+      }
+
+      searchEl.addEventListener("input", () => renderDropdown(searchEl.value));
+      searchEl.addEventListener("focus", () => { if (searchEl.value) renderDropdown(searchEl.value); });
+      document.addEventListener("click", function closeDD(e) {
+        if (!modal.contains(e.target)) { dropdownEl.style.display = "none"; document.removeEventListener("click", closeDD); }
+      });
+
+      saveBtn.disabled = false;
+      saveBtn.addEventListener("click", () => {
+        const pid   = pidEl.value.trim();
+        const pname = pnameEl.value.trim();
+        if (!pid || !pname) { errEl.textContent = "Please select a member."; return; }
+        errEl.textContent = "";
+        saveBtn.disabled = true;
+        putAssignment(bonusNumber, pid, pname, err => {
+          if (err) { errEl.textContent = `Error: ${err}`; saveBtn.disabled = false; }
+          else { modal.remove(); }
+        });
       });
     });
   }
@@ -778,6 +863,35 @@
       box-shadow: 0 8px 32px rgba(0,0,0,0.7);
     }
     #twi-assign-modal-box h3 { margin: 0 0 16px; font-size: 15px; color: #f6c344; }
+
+    /* searchable dropdown */
+    .twi-assign-dropdown {
+      display: none;
+      position: absolute;
+      z-index: 100001;
+      background: #2a2a2a;
+      border: 1px solid #555;
+      border-radius: 0 0 6px 6px;
+      max-height: 200px;
+      overflow-y: auto;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    #twi-assign-modal .twi-settings-row { position: relative; }
+    .twi-assign-option {
+      padding: 7px 10px;
+      cursor: pointer;
+      font-size: 13px;
+      color: #ddd;
+      border-bottom: 1px solid #333;
+    }
+    .twi-assign-option:last-child { border-bottom: none; }
+    .twi-assign-option:hover { background: #3a3a3a; }
+    .twi-assign-optid { color: #666; font-size: 11px; margin-left: 6px; }
+    .twi-assign-selected-name {
+      margin-top: 6px; font-size: 12px; color: #4CAF50; font-weight: 600; min-height: 16px;
+    }
+    .twi-assign-loading { color: #888; font-size: 12px; font-style: italic; margin: 8px 0; }
   `);
 
   // ── Boot ───────────────────────────────────────────────────────────────────

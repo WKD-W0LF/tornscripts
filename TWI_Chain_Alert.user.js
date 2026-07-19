@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.0.3
+// @version      1.0.4
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Shows an in-page banner when the chain is 2 or 1 hit away from a bonus number.
 // @license      MIT
@@ -56,13 +56,9 @@
 
   function isChainPage() {
     if (!location.pathname.endsWith("/factions.php")) return false;
-    // War tab takes over factions.php — chain widget is NOT on the war tab
-    if (document.querySelector(".faction-war")) return false;
-    // Hash guard for TornPDA
-    const hash = location.hash || "";
-    if (hash.startsWith("#/war/")) return false;
-    // Faction main tab must be present
-    return Boolean(document.getElementById("factions"));
+    // chain-box is present on both the main faction tab and the war tab —
+    // show the alert wherever the chain widget is visible
+    return Boolean(document.querySelector("div.chain-box"));
   }
 
   // ── Banner element management ──────────────────────────────────────────────
@@ -219,15 +215,16 @@
   let settingsPanelInjected = false;
 
   function mountSettingsPanel(panel) {
-    const factions = document.getElementById("factions");
-    const warTabActive = Boolean(document.querySelector(".faction-war"));
-
-    if (factions && !warTabActive) {
-      // Append to #factions if not already there
-      if (!panel.isConnected) factions.appendChild(panel);
-    } else {
+    if (!isChainPage()) {
       if (panel.isConnected) panel.remove();
+      return;
     }
+    if (panel.isConnected) return;
+    // Append after div.chain-box if possible, otherwise after the chain-box parent,
+    // otherwise fall back to document.body
+    const chainBox = findChainContainer();
+    const anchor = chainBox?.parentNode || document.getElementById("factions") || document.body;
+    anchor.appendChild(panel);
   }
 
   function injectSettingsPanel() {
@@ -236,7 +233,8 @@
       if (panel) mountSettingsPanel(panel);
       return;
     }
-    if (!document.getElementById("factions")) return;
+    // Wait until chain-box is in the DOM before injecting
+    if (!document.querySelector("div.chain-box")) return;
 
     const panel = document.createElement("details");
     panel.id = "twi-alert-settings";

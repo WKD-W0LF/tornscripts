@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Faction_Calls (Universal)
 // @namespace    twilight-reborn
-// @version      2.0.20
+// @version      2.0.23
 // @author       Leandria & Wolf (Universal: Bob)
 // @description  Shared target calls, priorities and assist requests for Twilight - Reborn [56966]. Optimized for all devices: mobile, tablet, and desktop.
 // @license      MIT
@@ -27,7 +27,11 @@
   // Their calls can be taken over by any member clicking the CALL button.
   const ADMIN_IDS = new Set(["3647423","3917106","3658650","3855001","3926412","4152155"]);
   // Display name overrides — shown in the call meta instead of the player's real name.
-  const DISPLAY_NAMES = new Map([["4157019", "\u{1F43A}\u{1F3D9}"]]);
+  const DISPLAY_NAMES = new Map([
+    ["4157019", "\u{1F43A}\u{1F43A}\u{1F43A}"],
+    ["3658650", "\u{1F60E}\u{1F60E}\u{1F60E}"],
+    ["3859007", "\u{1F478}\u{1F478}\u{1F478}"],
+  ]);
   // 8s poll = 7.5 calls/min per device.
   // At 20 active users that is 150 calls/min to the server — monitor if load increases.
   // All refresh triggers (interval, visibilitychange, hashchange) share the same

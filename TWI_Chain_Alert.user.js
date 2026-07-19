@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.0.4
+// @version      1.0.5
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Shows an in-page banner when the chain is 2 or 1 hit away from a bonus number.
 // @license      MIT
@@ -220,11 +220,27 @@
       return;
     }
     if (panel.isConnected) return;
-    // Append after div.chain-box if possible, otherwise after the chain-box parent,
-    // otherwise fall back to document.body
+    // div.chain-box is inside a <details> element — we must escape that entire
+    // details/summary chain before inserting, otherwise clicking our <details>
+    // summary toggles the parent chain widget instead of ours.
+    // Walk up until we find a non-<details>, non-<summary> block ancestor.
     const chainBox = findChainContainer();
-    const anchor = chainBox?.parentNode || document.getElementById("factions") || document.body;
-    anchor.appendChild(panel);
+    let anchor = chainBox?.parentNode || document.body;
+    while (anchor && (anchor.tagName === "DETAILS" || anchor.tagName === "SUMMARY")) {
+      anchor = anchor.parentNode;
+    }
+    // Insert our panel as a sibling AFTER the chain widget's top-level ancestor
+    // within the walked-to container, so it appears below the chain block.
+    const chainTop = chainBox ? (() => {
+      let el = chainBox;
+      while (el.parentNode && el.parentNode !== anchor) el = el.parentNode;
+      return el;
+    })() : null;
+    if (chainTop && chainTop.parentNode === anchor) {
+      chainTop.after(panel);
+    } else {
+      anchor.appendChild(panel);
+    }
   }
 
   function injectSettingsPanel() {

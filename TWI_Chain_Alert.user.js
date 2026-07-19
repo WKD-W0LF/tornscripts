@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.0.10
+// @version      1.0.11
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Shows an in-page banner when the chain is 2 or 1 hit away from a bonus number.
 // @license      MIT
@@ -214,21 +214,16 @@
 
   let settingsPanelInjected = false;
 
-  // Find the Targets <li> — the last item in the sidebar Lists section.
-  // Torn renders the left nav as <ul> items; "Targets" has a link to
-  // /loader.php?sid=targetList or similar. We match by link text as a fallback.
-  function findTargetsItem() {
-    // Primary: any <li> in the left nav whose link href contains "targetList"
-    const byHref = document.querySelector('nav li a[href*="targetList"], #sidebar li a[href*="targetList"]');
-    if (byHref) return byHref.closest("li");
-    // Fallback: last <li> inside whichever <ul> contains a link with text "Targets"
-    const byText = Array.from(document.querySelectorAll("nav li a, #sidebar li a"))
-      .find(a => a.textContent.trim() === "Targets");
-    return byText ? byText.closest("li") : null;
+  // Find the Targets row in the React-rendered sidebar.
+  // DOM structure: span.linkName___YZMai > a.link___tg6eQ > div.areaRow___Eheay
+  function findTargetsRow() {
+    const span = Array.from(document.querySelectorAll(".linkName___YZMai"))
+      .find(el => el.textContent.trim() === "Targets");
+    return span ? span.closest(".areaRow___Eheay") : null;
   }
 
   function mountSettingsPanel(panel) {
-    const anchor = findTargetsItem();
+    const anchor = findTargetsRow();
     if (!anchor) {
       panel.remove();
       return;
@@ -244,7 +239,7 @@
       if (panel) mountSettingsPanel(panel);
       return;
     }
-    if (!findTargetsItem()) return;
+    if (!findTargetsRow()) return;
 
     // Plain <div> styled to match the sidebar — no Torn accordion classes
     // since those are scoped to the main content column.
@@ -379,9 +374,9 @@
     if (!isChainPage()) hideBanner();
   }
 
-  // Observe #factions (same anchor TWSE uses) so we re-mount after SPA nav
+  // Observe the sidebar so we re-mount after SPA nav re-renders it
   function startObserver() {
-    const root = document.getElementById("factions") || document.body || document.documentElement;
+    const root = document.querySelector(".sidebar___c4dEc") || document.body || document.documentElement;
     const pageObserver = new MutationObserver((mutations) => {
       for (const m of mutations) {
         for (const node of [...m.addedNodes, ...m.removedNodes]) {

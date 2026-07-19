@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Faction_Calls (Universal)
 // @namespace    twilight-reborn
-// @version      2.0.7
+// @version      2.0.8
 // @author       Leandria & Wolf (Universal: Bob)
 // @description  Shared target calls, priorities and assist requests for Twilight - Reborn [56966]. Optimized for all devices: mobile, tablet, and desktop.
 // @license      MIT
@@ -41,8 +41,7 @@
     authenticating: null,
     polling: false,
     connected: false,
-    lastError: "",
-    autoClearing: new Set()
+    lastError: ""
   };
 
   function readJson(key) {
@@ -329,6 +328,28 @@
     return status.classList.contains("hospital") || status.classList.contains("jail") || /hospital|jail/i.test(cls);
   }
 
+  // Returns the hospital/jail release time as an ISO string, or null if not determinable.
+  // Torn renders the remaining time inside div.status in one of these forms:
+  //   • data-time / data-endtime attribute (Unix seconds, most reliable)
+  //   • text like "2m 30s", "1h 5m 10s", "45s"
+  function hospitalReleaseTime(status) {
+    if (!status) return null;
+    // 1. Prefer a machine-readable epoch attribute
+    const timeEl = status.querySelector("[data-time]") || status.querySelector("[data-endtime]");
+    if (timeEl) {
+      const epoch = parseInt(timeEl.dataset.time || timeEl.dataset.endtime, 10);
+      if (!isNaN(epoch) && epoch > 0) return new Date(epoch * 1000).toISOString();
+    }
+    // 2. Parse human-readable countdown text (e.g. "1h 2m 3s", "5m 30s", "45s")
+    const text = status.textContent || "";
+    const hours   = (/(\d+)\s*h/i.exec(text)?.[1] | 0);
+    const minutes = (/(\d+)\s*m/i.exec(text)?.[1] | 0);
+    const seconds = (/(\d+)\s*s/i.exec(text)?.[1] | 0);
+    const totalSec = hours * 3600 + minutes * 60 + seconds;
+    if (totalSec > 0) return new Date(Date.now() + totalSec * 1000).toISOString();
+    return null;
+  }
+
   function remaining(call) {
     return Math.max(0, Math.ceil((Date.parse(call.expiresAt) - Date.now()) / 1000));
   }
@@ -369,7 +390,14 @@
   async function claim(row) {
     busy(row.id, true);
     try {
-      const { data } = await authRequest("POST", "/calls", { targetId: row.id, targetName: row.name });
+      const body = { targetId: row.id, targetName: row.name };
+      // If the target is in hospital/jail, include the release time so the server
+      // sets the call timer to match when they get out (rather than default duration).
+      if (hospitalised(row.status)) {
+        const releaseAt = hospitalReleaseTime(row.status);
+        if (releaseAt) body.expiresAt = releaseAt;
+      }
+      const { data } = await authRequest("POST", "/calls", body);
       state.calls.set(row.id, data.call);
     } catch (error) {
       if (error.status === 409 && error.data?.call) state.calls.set(row.id, error.data.call);
@@ -476,10 +504,13 @@
 
     row.li.classList.toggle("twi-priority-row", Boolean(call?.priority));
     row.li.classList.toggle("twi-assist-row", Boolean(call?.assistRequested));
+    // Hospital indicator is independent of call state — show whenever status says so
+    const inHosp = hospitalised(row.status);
+    row.li.classList.toggle("twi-hosp-row", inHosp);
 
     if (!call) {
-      main.className = "twi-call-main twi-call-free";
-      label.textContent = "CALL";
+      main.className = `twi-call-main twi-call-free${inHosp ? " twi-call-hosp" : ""}`;
+      label.textContent = inHosp ? "H·CALL" : "CALL";
       main.disabled = false;
       main.removeAttribute("title");
       meta.textContent = "";
@@ -500,10 +531,6 @@
     assist.classList.toggle("active", Boolean(call.assistRequested));
 
     if (seconds <= 0) state.calls.delete(row.id);
-    if (hospitalised(row.status) && !state.autoClearing.has(row.id)) {
-      state.autoClearing.add(row.id);
-      release(row, call, "hospital").finally(() => setTimeout(() => state.autoClearing.delete(row.id), 3000));
-    }
   }
 
   // ── Settings panel — mirrors TWSE accordion exactly ───────────────────────
@@ -811,6 +838,8 @@
     .twi-call-control.twi-busy{opacity:.55;pointer-events:none}
     .members-list li.twi-priority-row{box-shadow:inset 4px 0 0 #f6c344!important}
     .members-list li.twi-assist-row{outline:2px solid rgba(240,140,0,.75);outline-offset:-2px}
+    .members-list li.twi-hosp-row .twi-call-hosp{background:rgba(52,100,185,.82)!important;border-color:rgba(100,160,255,.4)!important}
+    .members-list li.twi-hosp-row .twi-call-hosp .twi-state-dot{background:#69a0ff}
 
     /* ── Status chip ── */
     #twi-faction-calls-status{

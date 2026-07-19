@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Faction_Calls (Universal)
 // @namespace    twilight-reborn
-// @version      2.0.13
+// @version      2.0.14
 // @author       Leandria & Wolf (Universal: Bob)
 // @description  Shared target calls, priorities and assist requests for Twilight - Reborn [56966]. Optimized for all devices: mobile, tablet, and desktop.
 // @license      MIT
@@ -26,11 +26,11 @@
   // Faction admins — can place priority/assist calls on unclaimed targets.
   // Their calls can be taken over by any member clicking the CALL button.
   const ADMIN_IDS = new Set(["3647423","3917106","3658650","3855001","3926412","4152155","4157019"]);
-  // 15s poll = 4 calls/min per device.
-  // At 20 active users that is 80 calls/min to the server — within the 90/min limit.
+  // 8s poll = 7.5 calls/min per device.
+  // At 20 active users that is 150 calls/min to the server — monitor if load increases.
   // All refresh triggers (interval, visibilitychange, hashchange) share the same
   // lastPollTime gate so no combination of events can exceed this rate.
-  const POLL_MS = 15000;
+  const POLL_MS = 8000;
   const COUNTDOWN_MS = 1000;
   const PREFIX = "twi-faction-calls-";
 
@@ -743,7 +743,8 @@
     if (enabledInput) enabledInput.checked = state.enabled;
     if (statusLine) {
       if (state.connected) {
-        statusLine.textContent = `Connected as ${state.player?.name || "unknown"} · Session expires ${state.expiresAt ? new Date(state.expiresAt).toLocaleTimeString() : "N/A"}`;
+        const adminBadge = isAdmin() ? " · ⭐ Admin" : "";
+        statusLine.textContent = `Connected as ${state.player?.name || "unknown"} [${state.player?.id || "?"}]${adminBadge} · Session expires ${state.expiresAt ? new Date(state.expiresAt).toLocaleTimeString() : "N/A"}`;
         statusLine.style.color = "#4CAF50";
       } else if (state.lastError) {
         statusLine.textContent = `Disconnected · ${state.lastError}`;

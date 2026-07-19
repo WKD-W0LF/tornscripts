@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.0.6
+// @version      1.0.7
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Shows an in-page banner when the chain is 2 or 1 hit away from a bonus number.
 // @license      MIT
@@ -24,7 +24,7 @@
   const ALLOWED_FACTION_ID = 56966;
   const ADMIN_IDS       = new Set(["3647423","3917106","3658650","3855001","3926412","4152155","4157019"]);
   const BONUS_NUMBERS   = [10, 25, 50, 100, 250, 500, 1000];
-  const POLL_MS         = 8000;
+  const POLL_MS         = 4000;
   const PREFIX          = "twi-chain-alert-";
 
   // ── State ──────────────────────────────────────────────────────────────────

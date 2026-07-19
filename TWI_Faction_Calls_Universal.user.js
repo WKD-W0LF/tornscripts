@@ -373,7 +373,10 @@
         const id = String(c.targetId);
         const existing = state.calls.get(id);
         if (existing?.expiresAt && Date.parse(existing.expiresAt) > Date.parse(c.expiresAt)) {
+          console.log(`[TWI] refreshCalls: preserving local expiresAt for ${id}: ${existing.expiresAt} > server ${c.expiresAt}`);
           c.expiresAt = existing.expiresAt;
+        } else if (existing) {
+          console.log(`[TWI] refreshCalls: server wins for ${id}: server=${c.expiresAt} local=${existing.expiresAt}`);
         }
         return [id, c];
       }));
@@ -401,19 +404,19 @@
     // Read hospital release time before the async call so we can override the
     // server's expiresAt locally — the server may not honour the field.
     const hospRelease = hospitalised(row.status) ? hospitalReleaseTime(row.status) : null;
+    console.log(`[TWI] claim: id=${row.id} inHosp=${hospitalised(row.status)} hospRelease=${hospRelease} statusHTML="${row.status?.innerHTML}"`);
     try {
       const body = { targetId: row.id, targetName: row.name };
       if (hospRelease) body.expiresAt = hospRelease;
       const { data } = await authRequest("POST", "/calls", body);
+      console.log(`[TWI] claim response: expiresAt=${data.call?.expiresAt} (server)`);
       const call = data.call;
-      // Override expiresAt locally so our countdown uses the hospital timer
-      // regardless of what the server returns.
       if (hospRelease) call.expiresAt = hospRelease;
+      console.log(`[TWI] claim stored: expiresAt=${call.expiresAt} remaining=${remaining(call)}s`);
       state.calls.set(row.id, call);
     } catch (error) {
       if (error.status === 409 && error.data?.call) {
         const call = error.data.call;
-        // Same override for the conflict case (already claimed by someone else)
         if (hospRelease) call.expiresAt = hospRelease;
         state.calls.set(row.id, call);
       } else await showAlert(`Unable to call ${row.name}: ${error.message}`);
@@ -545,7 +548,10 @@
     priority.classList.toggle("active", Boolean(call.priority));
     assist.classList.toggle("active", Boolean(call.assistRequested));
 
-    if (seconds <= 0) state.calls.delete(row.id);
+    if (seconds <= 0) {
+      console.log(`[TWI] renderRow: deleting expired call for ${row.id}, expiresAt=${call.expiresAt}`);
+      state.calls.delete(row.id);
+    }
   }
 
   // ── Settings panel — mirrors TWSE accordion exactly ───────────────────────

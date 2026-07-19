@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.1.8
+// @version      1.1.9
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Alerts at 5 hits from bonus, personalised banner for assigned hitters.
 // @license      MIT
@@ -693,29 +693,30 @@
     /* ── Banner ── */
     #twi-alert-banner {
       display: none;
-      width: 100%;
-      margin: 4px 0;
-      padding: 5px 10px;
-      border-radius: 4px;
-      font-size: 12px;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 99999;
+      padding: 10px 16px;
+      font-size: 15px;
       font-weight: 700;
-      line-height: 1.2;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      line-height: 1.3;
+      text-align: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.5);
       box-sizing: border-box;
     }
     #twi-alert-banner.twi-alert-warn {
       display: block;
       background: #f6c344;
       color: #3d2f00;
-      border-left: 4px solid #e6a800;
+      border-bottom: 3px solid #e6a800;
     }
     #twi-alert-banner.twi-alert-urgent {
       display: block;
       background: #c92a2a;
       color: #fff;
-      border-left: 4px solid #ff4444;
+      border-bottom: 3px solid #ff4444;
       animation: twi-pulse 1s ease-in-out infinite;
     }
     /* Personal hit banners */
@@ -723,13 +724,13 @@
       display: block;
       background: #1a5fa8;
       color: #fff;
-      border-left: 4px solid #4a9eff;
+      border-bottom: 3px solid #4a9eff;
     }
     #twi-alert-banner.twi-alert-mine-urgent {
       display: block;
       background: #7c35ab;
       color: #fff;
-      border-left: 4px solid #c084fc;
+      border-bottom: 3px solid #c084fc;
       animation: twi-pulse 0.8s ease-in-out infinite;
     }
     @keyframes twi-pulse {

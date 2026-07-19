@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.1.5
+// @version      1.1.6
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Alerts at 5 hits from bonus, personalised banner for assigned hitters.
 // @license      MIT
@@ -734,13 +734,16 @@
     /* ── Banner ── */
     #twi-alert-banner {
       display: none;
-      margin: 8px 0;
-      padding: 10px 14px;
-      border-radius: 6px;
-      font-size: 13px;
+      width: 100%;
+      margin: 4px 0;
+      padding: 5px 10px;
+      border-radius: 4px;
+      font-size: 12px;
       font-weight: 700;
-      line-height: 1.4;
-      min-width: 260px;
+      line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
       box-sizing: border-box;
     }
     #twi-alert-banner.twi-alert-warn {

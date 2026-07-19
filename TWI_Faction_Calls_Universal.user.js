@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Faction_Calls (Universal)
 // @namespace    twilight-reborn
-// @version      2.0.11
+// @version      2.0.12
 // @author       Leandria & Wolf (Universal: Bob)
 // @description  Shared target calls, priorities and assist requests for Twilight - Reborn [56966]. Optimized for all devices: mobile, tablet, and desktop.
 // @license      MIT
@@ -367,7 +367,6 @@
     state.polling = true;
     try {
       const { data } = await authRequest("GET", "/calls");
-      console.log(`[TWI] GET /calls: ${JSON.stringify(data.calls?.map(c=>({id:c.targetId,rem:Math.round((Date.parse(c.expiresAt)-Date.now())/1000)})))}`);
       // Rebuild the calls map, but preserve any locally-extended expiresAt
       // (e.g. hospital timer override) that is longer than the server's value.
       state.calls = new Map((data.calls || []).map((c) => {
@@ -402,15 +401,12 @@
     // Read hospital release time before the async call so we can override the
     // server's expiresAt locally — the server may not honour the field.
     const hospRelease = hospitalised(row.status) ? hospitalReleaseTime(row.status) : null;
-    console.log(`[TWI] claim: id=${row.id} inHosp=${hospitalised(row.status)} hospRelease=${hospRelease} statusHTML="${row.status?.innerHTML}"`);
     try {
       const body = { targetId: row.id, targetName: row.name };
       if (hospRelease) body.expiresAt = hospRelease;
       const { data } = await authRequest("POST", "/calls", body);
-      console.log(`[TWI] claim response: expiresAt=${data.call?.expiresAt} (server)`);
       const call = data.call;
       if (hospRelease) call.expiresAt = hospRelease;
-      console.log(`[TWI] claim stored: expiresAt=${call.expiresAt} remaining=${remaining(call)}s`);
       state.calls.set(row.id, call);
     } catch (error) {
       if (error.status === 409 && error.data?.call) {
@@ -546,12 +542,7 @@
     priority.classList.toggle("active", Boolean(call.priority));
     assist.classList.toggle("active", Boolean(call.assistRequested));
 
-    if (seconds <= 0) {
-      console.log(`[TWI] renderRow: EXPIRED id=${row.id} expiresAt=${call.expiresAt} remaining=${seconds}s`);
-      state.calls.delete(row.id);
-    } else {
-      console.log(`[TWI] renderRow: LIVE id=${row.id} remaining=${seconds}s inHosp=${hospitalised(row.status)}`);
-    }
+    if (seconds <= 0) state.calls.delete(row.id);
   }
 
   // ── Settings panel — mirrors TWSE accordion exactly ───────────────────────

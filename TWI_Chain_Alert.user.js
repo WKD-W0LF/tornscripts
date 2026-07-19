@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.2.0
+// @version      1.2.1
 // @author       WKD-W0LF
-// @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Alerts at 5 hits from bonus, personalised banner for assigned hitters.
+// @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Alerts at 5 hits from bonus, personalised banner for assigned hitters. Works on all Torn pages.
 // @license      MIT
-// @match        https://www.torn.com/factions.php*
-// @match        https://torn.com/factions.php*
+// @match        https://www.torn.com/*
+// @match        https://torn.com/*
 // @connect      api.torn.com
 // @connect      torn-calls.apps.gpu4.fusion.isys.hpc.dc.uq.edu.au
 // @grant        GM_addStyle
@@ -24,8 +24,8 @@
   const ALLOWED_FACTION_ID = 56966;
   const ADMIN_IDS       = new Set(["3647423","3917106","3658650","3855001","3926412","4152155","4157019"]);
   const BONUS_NUMBERS   = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000];
-  const POLL_MS         = 2000;   // used for ASSIGN_POLL_MS fallback only
-  const ASSIGN_POLL_MS  = 30000;   // re-fetch assignments every 30s
+  const POLL_MS         = 2000;   // API poll interval on non-faction pages
+  const ASSIGN_POLL_MS  = 30000;  // re-fetch assignments every 30s
   const PREFIX          = "twi-chain-alert-";
 
   // ── State ──────────────────────────────────────────────────────────────────
@@ -80,9 +80,12 @@
 
   // ── Page detection ─────────────────────────────────────────────────────────
 
+  function isFactionPage() {
+    return location.pathname.includes("/factions.php");
+  }
+
   function isChainPage() {
-    if (!location.pathname.endsWith("/factions.php")) return false;
-    return Boolean(document.querySelector("div.chain-box"));
+    return isFactionPage() && Boolean(document.querySelector("div.chain-box"));
   }
 
   // ── Session / auth ─────────────────────────────────────────────────────────
@@ -207,18 +210,12 @@
 
   // ── Banner element management ──────────────────────────────────────────────
 
-  function findChainContainer() {
-    return document.querySelector("div.chain-box");
-  }
-
   function ensureBannerEl() {
-    if (!isChainPage()) { removeBannerEl(); return; }
     if (document.getElementById("twi-alert-banner")) return;
-    const container = findChainContainer();
-    if (!container) return;
     const banner = document.createElement("div");
     banner.id = "twi-alert-banner";
-    container.parentNode.insertBefore(banner, container.nextSibling);
+    // position:fixed so it works on any page regardless of DOM structure
+    document.body.appendChild(banner);
   }
 
   function removeBannerEl() {
@@ -298,11 +295,13 @@
     }
   }
 
-  // ── Chain count — read directly from the page DOM ─────────────────────────
-  // span.chain-box-center-stat is updated by Torn's own JS in real-time,
-  // so observing it gives zero-lag chain count with no API calls needed.
+  // ── Chain count ────────────────────────────────────────────────────────────
+  // On faction page: MutationObserver on .chain-box-center-stat — zero lag.
+  // On other pages:  API poll fallback so the banner persists while navigating.
 
   let chainObserver = null;
+  let apiPollTimer  = null;
+  let lastApiPoll   = 0;
 
   function readChainFromDOM() {
     const el = document.querySelector(".chain-box-center-stat");
@@ -311,28 +310,61 @@
     return isNaN(n) ? null : n;
   }
 
-  function onChainUpdate() {
-    const count = readChainFromDOM();
-    if (count === state.chainCount) return;   // no change
+  function applyChainCount(count) {
+    if (count === state.chainCount) return;
     state.chainCount = count;
-    // Periodically sync assignments (throttled to ASSIGN_POLL_MS)
     fetchAssignments();
     checkAlerts();
     updateSettingsPanel();
   }
 
+  function onChainUpdate() {
+    applyChainCount(readChainFromDOM());
+  }
+
   function attachChainObserver() {
     if (chainObserver) { chainObserver.disconnect(); chainObserver = null; }
     const el = document.querySelector(".chain-box-center-stat");
-    if (!el) return;
+    if (!el) return false;
     chainObserver = new MutationObserver(onChainUpdate);
     chainObserver.observe(el, { childList: true, subtree: true, characterData: true });
-    // Read immediately on attach
     onChainUpdate();
+    return true;
   }
 
   function detachChainObserver() {
     if (chainObserver) { chainObserver.disconnect(); chainObserver = null; }
+  }
+
+  function pollChainApi() {
+    if (!state.apiKey) return;
+    if (Date.now() - lastApiPoll < POLL_MS) return;
+    lastApiPoll = Date.now();
+    GM_xmlhttpRequest({
+      method: "GET",
+      url: `${TORN_API_BASE}/v2/faction/chain?key=${state.apiKey}`,
+      headers: { "Content-Type": "application/json" },
+      onload(response) {
+        let data;
+        try { data = JSON.parse(response.responseText || "{}"); } catch { return; }
+        if (response.status >= 200 && response.status < 300) {
+          applyChainCount(data?.chain?.current ?? null);
+        }
+      }
+    });
+  }
+
+  function startApiPollTimer() {
+    if (apiPollTimer) return;
+    apiPollTimer = setInterval(() => {
+      if (!state.enabled) return;
+      if (document.visibilityState === "hidden") return;
+      pollChainApi();
+    }, POLL_MS);
+  }
+
+  function stopApiPollTimer() {
+    if (apiPollTimer) { clearInterval(apiPollTimer); apiPollTimer = null; }
     state.chainCount = null;
   }
 
@@ -656,17 +688,27 @@
   // ── ensureUI ───────────────────────────────────────────────────────────────
 
   function ensureUI() {
-    injectSettingsPanel();
     ensureBannerEl();
-    if (isChainPage() && state.enabled) {
+    if (!state.enabled) { hideBanner(); return; }
+
+    // Settings panel only on faction page (sidebar lives there)
+    if (isFactionPage()) injectSettingsPanel();
+
+    if (isChainPage()) {
+      // Faction page with chain widget — use zero-lag DOM observer
+      stopApiPollTimer();
       attachChainObserver();
-    } else {
+    } else if (state.apiKey) {
+      // Any other Torn page — API poll so banner persists while navigating
       detachChainObserver();
-      hideBanner();
+      startApiPollTimer();
+      pollChainApi();   // immediate first poll on page load
     }
   }
 
   function startObserver() {
+    // Only observe DOM mutations on faction page; elsewhere we use API polling
+    if (!isFactionPage()) return;
     const root = document.querySelector(".sidebar___c4dEc") || document.body || document.documentElement;
     const pageObserver = new MutationObserver((mutations) => {
       for (const m of mutations) {
@@ -685,6 +727,12 @@
     settingsPanelInjected = false;
     detachChainObserver();
     ensureUI();
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && state.enabled && state.apiKey) {
+      if (!isChainPage()) pollChainApi();
+    }
   });
 
   // ── CSS ────────────────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.1.0
+// @version      1.1.1
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Alerts at 5 hits from bonus, personalised banner for assigned hitters.
 // @license      MIT
@@ -100,6 +100,7 @@
         if (data.success && data.sessionToken) {
           setSession(data.sessionToken, data.player?.id, data.player?.name);
           updateSettingsPanel();
+          renderAssignmentTable();   // re-render now that playerId is known
           if (callback) callback();
         } else {
           state.lastError = data.error || "Auth failed";

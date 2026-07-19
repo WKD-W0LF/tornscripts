@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Faction_Calls (Universal)
 // @namespace    twilight-reborn
-// @version      2.0.8
+// @version      2.0.9
 // @author       Leandria & Wolf (Universal: Bob)
 // @description  Shared target calls, priorities and assist requests for Twilight - Reborn [56966]. Optimized for all devices: mobile, tablet, and desktop.
 // @license      MIT
@@ -367,7 +367,16 @@
     state.polling = true;
     try {
       const { data } = await authRequest("GET", "/calls");
-      state.calls = new Map((data.calls || []).map((c) => [String(c.targetId), c]));
+      // Rebuild the calls map, but preserve any locally-extended expiresAt
+      // (e.g. hospital timer override) that is longer than the server's value.
+      state.calls = new Map((data.calls || []).map((c) => {
+        const id = String(c.targetId);
+        const existing = state.calls.get(id);
+        if (existing?.expiresAt && Date.parse(existing.expiresAt) > Date.parse(c.expiresAt)) {
+          c.expiresAt = existing.expiresAt;
+        }
+        return [id, c];
+      }));
       state.connected = true;
       state.lastError = "";
       updateChip();
@@ -389,19 +398,25 @@
 
   async function claim(row) {
     busy(row.id, true);
+    // Read hospital release time before the async call so we can override the
+    // server's expiresAt locally — the server may not honour the field.
+    const hospRelease = hospitalised(row.status) ? hospitalReleaseTime(row.status) : null;
     try {
       const body = { targetId: row.id, targetName: row.name };
-      // If the target is in hospital/jail, include the release time so the server
-      // sets the call timer to match when they get out (rather than default duration).
-      if (hospitalised(row.status)) {
-        const releaseAt = hospitalReleaseTime(row.status);
-        if (releaseAt) body.expiresAt = releaseAt;
-      }
+      if (hospRelease) body.expiresAt = hospRelease;
       const { data } = await authRequest("POST", "/calls", body);
-      state.calls.set(row.id, data.call);
+      const call = data.call;
+      // Override expiresAt locally so our countdown uses the hospital timer
+      // regardless of what the server returns.
+      if (hospRelease) call.expiresAt = hospRelease;
+      state.calls.set(row.id, call);
     } catch (error) {
-      if (error.status === 409 && error.data?.call) state.calls.set(row.id, error.data.call);
-      else await showAlert(`Unable to call ${row.name}: ${error.message}`);
+      if (error.status === 409 && error.data?.call) {
+        const call = error.data.call;
+        // Same override for the conflict case (already claimed by someone else)
+        if (hospRelease) call.expiresAt = hospRelease;
+        state.calls.set(row.id, call);
+      } else await showAlert(`Unable to call ${row.name}: ${error.message}`);
     } finally {
       busy(row.id, false);
       renderAll();

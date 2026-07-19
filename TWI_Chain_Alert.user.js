@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.0.1
+// @version      1.0.2
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Shows an in-page banner when the chain is 2 or 1 hit away from a bonus number.
 // @license      MIT
@@ -68,19 +68,8 @@
   // ── Banner element management ──────────────────────────────────────────────
 
   function findChainContainer() {
-    // Try known selectors in order of specificity
-    return (
-      document.querySelector(".faction-chain-wrap") ||
-      document.querySelector("[class*='chainWrap']") ||
-      document.querySelector("[class*='chain-wrap']") ||
-      // Broader fallback: a div inside #factions containing "Chain" text
-      (() => {
-        for (const el of document.querySelectorAll("#factions [class*='chain']")) {
-          if (el.textContent.includes("Chain")) return el.parentElement || el;
-        }
-        return null;
-      })()
-    );
+    // Confirmed live selector from factions.php DOM inspection
+    return document.querySelector("div.chain-box");
   }
 
   function ensureBannerEl() {

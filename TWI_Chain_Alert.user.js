@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.1.3
+// @version      1.1.4
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Alerts at 5 hits from bonus, personalised banner for assigned hitters.
 // @license      MIT
@@ -409,7 +409,10 @@
 
     if (isAdmin()) {
       container.querySelectorAll(".twi-btn-assign").forEach(btn => {
-        btn.addEventListener("click", () => openAssignModal(Number(btn.dataset.bn)));
+        btn.addEventListener("click", () => {
+          const row = btn.closest("tr");
+          openInlineAssign(Number(btn.dataset.bn), row);
+        });
       });
       container.querySelectorAll(".twi-btn-remove").forEach(btn => {
         btn.addEventListener("click", () => {
@@ -450,116 +453,79 @@
     });
   }
 
-  // ── Assign modal ───────────────────────────────────────────────────────────
+  // ── Inline assign row — replaces the table row with a search field ─────────
 
-  function openAssignModal(bonusNumber) {
-    document.getElementById("twi-assign-modal")?.remove();
+  function openInlineAssign(bonusNumber, row) {
+    // Replace this row with an inline search field
+    const existing = state.assignments.get(bonusNumber);
 
-    // Show a loading modal while we fetch members
-    const modal = document.createElement("div");
-    modal.id = "twi-assign-modal";
-    modal.innerHTML = `
-      <div id="twi-assign-modal-box">
-        <h3>Assign Bonus ${bonusNumber}</h3>
-        <div id="twi-assign-modal-inner">
-          <p class="twi-assign-loading">Loading faction members…</p>
-        </div>
-        <div id="twi-assign-modal-error" style="color:#e74c3c;font-size:12px;min-height:16px;margin-bottom:8px;"></div>
-        <div class="twi-settings-actions">
-          <button type="button" id="twi-assign-confirm" class="torn-btn twi-btn-save" disabled>Save</button>
-          <button type="button" id="twi-assign-cancel" class="torn-btn twi-btn-secondary">Cancel</button>
-        </div>
-      </div>`;
-
-    document.body.appendChild(modal);
-    modal.querySelector("#twi-assign-cancel").addEventListener("click", () => modal.remove());
-    modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
-
-    fetchFactionMembers(members => {
-      const inner  = modal.querySelector("#twi-assign-modal-inner");
-      const errEl  = modal.querySelector("#twi-assign-modal-error");
-      const saveBtn = modal.querySelector("#twi-assign-confirm");
-
-      if (!members.length) {
-        inner.innerHTML = `<p style="color:#e74c3c;font-size:12px;">Could not load faction members. Check your API key has Faction access.</p>`;
-        return;
-      }
-
-      const existing = state.assignments.get(bonusNumber);
-
-      // Build searchable dropdown
-      inner.innerHTML = `
-        <div class="twi-settings-row">
-          <label><strong>Select Member:</strong></label>
+    row.innerHTML = `
+      <td colspan="3" class="twi-assign-inline-cell">
+        <span class="twi-assign-inline-label">Bonus ${bonusNumber}:</span>
+        <div class="twi-assign-inline-wrap">
           <input
             type="text"
-            id="twi-assign-search"
-            class="twi-settings-input"
-            placeholder="Type to filter…"
+            class="twi-assign-inline-input"
+            placeholder="Type member name…"
             autocomplete="off"
             spellcheck="false"
+            value="${existing ? escHtml(existing.playerName) : ''}"
           />
-          <div id="twi-assign-dropdown" class="twi-assign-dropdown"></div>
-          <input type="hidden" id="twi-assign-pid" />
-          <input type="hidden" id="twi-assign-pname" />
-          <div id="twi-assign-selected" class="twi-assign-selected-name"></div>
-        </div>`;
+          <div class="twi-assign-inline-dropdown"></div>
+        </div>
+        <button class="torn-btn twi-btn-secondary twi-assign-inline-cancel">✕</button>
+        <span class="twi-assign-inline-status"></span>
+      </td>`;
 
-      const searchEl   = modal.querySelector("#twi-assign-search");
-      const dropdownEl = modal.querySelector("#twi-assign-dropdown");
-      const pidEl      = modal.querySelector("#twi-assign-pid");
-      const pnameEl    = modal.querySelector("#twi-assign-pname");
-      const selectedEl = modal.querySelector("#twi-assign-selected");
+    const inputEl    = row.querySelector(".twi-assign-inline-input");
+    const dropdownEl = row.querySelector(".twi-assign-inline-dropdown");
+    const cancelBtn  = row.querySelector(".twi-assign-inline-cancel");
+    const statusEl   = row.querySelector(".twi-assign-inline-status");
 
-      // Pre-select existing assignment
-      if (existing) {
-        pidEl.value    = existing.playerId;
-        pnameEl.value  = existing.playerName;
-        selectedEl.textContent = `✓ ${existing.playerName}`;
-        saveBtn.disabled = false;
-      }
+    cancelBtn.addEventListener("click", () => renderAssignmentTable());
 
-      function renderDropdown(filter) {
-        const q = filter.toLowerCase();
-        const hits = members.filter(m => m.name.toLowerCase().includes(q) || m.id.includes(q));
-        if (!hits.length || !filter) { dropdownEl.style.display = "none"; return; }
-        dropdownEl.innerHTML = hits.slice(0, 20).map(m =>
-          `<div class="twi-assign-option" data-id="${m.id}" data-name="${escHtml(m.name)}">${escHtml(m.name)} <span class="twi-assign-optid">#${m.id}</span></div>`
-        ).join("");
-        dropdownEl.style.display = "block";
-        dropdownEl.querySelectorAll(".twi-assign-option").forEach(opt => {
-          opt.addEventListener("click", () => {
-            pidEl.value    = opt.dataset.id;
-            pnameEl.value  = opt.dataset.name;
-            searchEl.value = "";
-            selectedEl.textContent = `✓ ${opt.dataset.name}`;
-            dropdownEl.style.display = "none";
-            saveBtn.disabled = false;
-            errEl.textContent = "";
-          });
-        });
-      }
-
-      searchEl.addEventListener("input", () => renderDropdown(searchEl.value));
-      searchEl.addEventListener("focus", () => { if (searchEl.value) renderDropdown(searchEl.value); });
-      document.addEventListener("click", function closeDD(e) {
-        if (!modal.contains(e.target)) { dropdownEl.style.display = "none"; document.removeEventListener("click", closeDD); }
+    function selectMember(id, name) {
+      inputEl.value = name;
+      dropdownEl.style.display = "none";
+      statusEl.textContent = "Saving…";
+      statusEl.style.color = "#888";
+      putAssignment(bonusNumber, id, name, err => {
+        if (err) {
+          statusEl.textContent = `Error: ${err}`;
+          statusEl.style.color = "#e74c3c";
+        } else {
+          // Success — drop back to the table immediately
+          renderAssignmentTable();
+        }
       });
+    }
 
-      saveBtn.disabled = !pidEl.value;
-      // Use onclick to avoid accumulating listeners on cached re-opens
-      saveBtn.onclick = () => {
-        const pid   = pidEl.value.trim();
-        const pname = pnameEl.value.trim();
-        if (!pid || !pname) { errEl.textContent = "Please select a member."; return; }
-        errEl.textContent = "";
-        saveBtn.disabled = true;
-        putAssignment(bonusNumber, pid, pname, err => {
-          if (err) { errEl.textContent = `Error: ${err}`; saveBtn.disabled = false; }
-          else { modal.remove(); }
+    function showDropdown(filter) {
+      const members = factionMemberCache || [];
+      const q = filter.toLowerCase();
+      const hits = members.filter(m => m.name.toLowerCase().includes(q) || m.id.includes(q));
+      if (!hits.length || !filter) { dropdownEl.style.display = "none"; return; }
+      dropdownEl.innerHTML = hits.slice(0, 20).map(m =>
+        `<div class="twi-assign-option" data-id="${m.id}" data-name="${escHtml(m.name)}">
+          ${escHtml(m.name)} <span class="twi-assign-optid">#${m.id}</span>
+        </div>`
+      ).join("");
+      dropdownEl.style.display = "block";
+      dropdownEl.querySelectorAll(".twi-assign-option").forEach(opt => {
+        opt.addEventListener("mousedown", e => {
+          // mousedown fires before blur so we can capture the value
+          e.preventDefault();
+          selectMember(opt.dataset.id, opt.dataset.name);
         });
-      };
-    });
+      });
+    }
+
+    inputEl.addEventListener("input", () => showDropdown(inputEl.value));
+    inputEl.addEventListener("focus",  () => { if (inputEl.value) showDropdown(inputEl.value); });
+    inputEl.addEventListener("blur",   () => setTimeout(() => { dropdownEl.style.display = "none"; }, 150));
+
+    // Fetch members if not cached, then focus
+    fetchFactionMembers(() => inputEl.focus());
   }
 
   // ── Settings panel ─────────────────────────────────────────────────────────
@@ -856,47 +822,52 @@
     .twi-btn-remove { font-size: 11px !important; padding: 2px 6px !important; background: #7a1e1e !important; color: #fff !important; margin-left: 4px !important; }
     .twi-btn-remove:hover { background: #a02424 !important; }
 
-    /* ── Assign modal ── */
-    #twi-assign-modal {
-      position: fixed; inset: 0; z-index: 99999;
-      background: rgba(0,0,0,0.65);
-      display: flex; align-items: center; justify-content: center;
+    /* ── Inline assign row ── */
+    .twi-assign-inline-cell {
+      padding: 6px 4px !important;
     }
-    #twi-assign-modal-box {
-      background: #1e1e1e; border: 1px solid #444; border-radius: 8px;
-      padding: 20px 24px; width: 320px; color: #ddd;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.7);
+    .twi-assign-inline-label {
+      font-size: 11px; color: #f6c344; font-weight: 700;
+      display: block; margin-bottom: 4px;
     }
-    #twi-assign-modal-box h3 { margin: 0 0 16px; font-size: 15px; color: #f6c344; }
-
-    /* searchable dropdown */
-    .twi-assign-dropdown {
+    .twi-assign-inline-wrap {
+      position: relative; display: inline-block; width: 100%;
+    }
+    .twi-assign-inline-input {
+      width: 100%; padding: 5px 8px; box-sizing: border-box;
+      background: #1a1a1a; color: #fff;
+      border: 1px solid #4a9eff; border-radius: 4px;
+      font-size: 12px; font-family: inherit;
+    }
+    .twi-assign-inline-input:focus { outline: none; }
+    .twi-assign-inline-dropdown {
       display: none;
       position: absolute;
       z-index: 100001;
+      top: 100%; left: 0; right: 0;
       background: #2a2a2a;
       border: 1px solid #555;
+      border-top: none;
       border-radius: 0 0 6px 6px;
-      max-height: 200px;
+      max-height: 180px;
       overflow-y: auto;
-      width: 100%;
-      box-sizing: border-box;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
     }
-    #twi-assign-modal .twi-settings-row { position: relative; }
     .twi-assign-option {
-      padding: 7px 10px;
-      cursor: pointer;
-      font-size: 13px;
-      color: #ddd;
+      padding: 6px 10px; cursor: pointer;
+      font-size: 12px; color: #ddd;
       border-bottom: 1px solid #333;
     }
     .twi-assign-option:last-child { border-bottom: none; }
     .twi-assign-option:hover { background: #3a3a3a; }
-    .twi-assign-optid { color: #666; font-size: 11px; margin-left: 6px; }
-    .twi-assign-selected-name {
-      margin-top: 6px; font-size: 12px; color: #4CAF50; font-weight: 600; min-height: 16px;
+    .twi-assign-optid { color: #666; font-size: 11px; margin-left: 5px; }
+    .twi-assign-inline-cancel {
+      font-size: 11px !important; padding: 2px 6px !important;
+      margin-left: 4px !important; vertical-align: top;
     }
-    .twi-assign-loading { color: #888; font-size: 12px; font-style: italic; margin: 8px 0; }
+    .twi-assign-inline-status {
+      display: block; font-size: 11px; color: #888; margin-top: 3px;
+    }
   `);
 
   // ── Boot ───────────────────────────────────────────────────────────────────

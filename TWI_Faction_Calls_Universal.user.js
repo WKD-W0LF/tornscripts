@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Faction_Calls (Universal)
 // @namespace    twilight-reborn
-// @version      2.0.12
+// @version      2.0.13
 // @author       Leandria & Wolf (Universal: Bob)
 // @description  Shared target calls, priorities and assist requests for Twilight - Reborn [56966]. Optimized for all devices: mobile, tablet, and desktop.
 // @license      MIT
@@ -23,6 +23,9 @@
   const APP_NAME = "TWI Faction Calls";
   const API_BASE = "https://torn-calls.apps.gpu4.fusion.isys.hpc.dc.uq.edu.au/api/v1";
   const ALLOWED_FACTION_ID = 56966;
+  // Faction admins — can place priority/assist calls on unclaimed targets.
+  // Their calls can be taken over by any member clicking the CALL button.
+  const ADMIN_IDS = new Set(["3647423","3917106","3658650","3855001","3926412","4152155","4157019"]);
   // 15s poll = 4 calls/min per device.
   // At 20 active users that is 80 calls/min to the server — within the 90/min limit.
   // All refresh triggers (interval, visibilitychange, hashchange) share the same
@@ -396,13 +399,21 @@
       .forEach((el) => el.classList.toggle("twi-busy", value));
   }
 
-  async function claim(row) {
+  function isAdmin() {
+    return state.player && ADMIN_IDS.has(String(state.player.id));
+  }
+
+  function isAdminCall(call) {
+    return call && ADMIN_IDS.has(String(call.calledById));
+  }
+
+  async function claim(row, flags = {}) {
     busy(row.id, true);
     // Read hospital release time before the async call so we can override the
     // server's expiresAt locally — the server may not honour the field.
     const hospRelease = hospitalised(row.status) ? hospitalReleaseTime(row.status) : null;
     try {
-      const body = { targetId: row.id, targetName: row.name };
+      const body = { targetId: row.id, targetName: row.name, priority: false, assistRequested: false, ...flags };
       if (hospRelease) body.expiresAt = hospRelease;
       const { data } = await authRequest("POST", "/calls", body);
       const call = data.call;
@@ -418,6 +429,20 @@
       busy(row.id, false);
       renderAll();
     }
+  }
+
+  // Non-admin taking over an admin-placed call: DELETE with ?takeover=1 then claim.
+  async function takeover(row) {
+    busy(row.id, true);
+    try {
+      await authRequest("DELETE", `/calls/${encodeURIComponent(row.id)}?takeover=1`);
+      state.calls.delete(row.id);
+    } catch (error) {
+      if (error.status === 404) state.calls.delete(row.id);
+      else { busy(row.id, false); renderAll(); await showAlert(`Unable to take over call on ${row.name}: ${error.message}`); return; }
+    }
+    // Now claim immediately
+    await claim(row);
   }
 
   async function release(row, call, reason = "manual") {
@@ -480,16 +505,24 @@
       const live = targetRows().find((r) => r.id === row.id) || row;
       const call = state.calls.get(row.id);
       if (!call) { claim(live); return; }
+      // Admin call — non-admins can take it over; admins release their own
+      if (isAdminCall(call) && !isAdmin()) { takeover(live); return; }
       if (state.player && String(call.calledById) === String(state.player.id)) release(live, call);
     });
     control.querySelector(".twi-priority").addEventListener("click", (e) => {
       e.preventDefault(); e.stopPropagation();
+      const live = targetRows().find((r) => r.id === row.id) || row;
       const call = state.calls.get(row.id);
+      // Admin with no existing call: claim immediately with priority set
+      if (!call && isAdmin()) { claim(live, { priority: true }); return; }
       if (call) patch(row, { priority: !call.priority });
     });
     control.querySelector(".twi-assist").addEventListener("click", (e) => {
       e.preventDefault(); e.stopPropagation();
+      const live = targetRows().find((r) => r.id === row.id) || row;
       const call = state.calls.get(row.id);
+      // Admin with no existing call: claim immediately with assist set
+      if (!call && isAdmin()) { claim(live, { assistRequested: true }); return; }
       if (call) patch(row, { assistRequested: !call.assistRequested });
     });
     row.member.appendChild(control);
@@ -526,15 +559,20 @@
       main.disabled = false;
       main.removeAttribute("title");
       meta.textContent = "";
-      actions.hidden = true;
+      // Admins see flag buttons even on unclaimed targets
+      actions.hidden = !isAdmin();
+      priority.classList.remove("active");
+      assist.classList.remove("active");
       return;
     }
 
     const seconds = remaining(call);
     const isOwnCall = state.player && String(call.calledById) === String(state.player.id);
-    main.className = `twi-call-main twi-call-called${isOwnCall ? "" : " twi-call-readonly"}`;
-    label.textContent = format(seconds);
-    main.disabled = !isOwnCall;
+    const adminPlaced = isAdminCall(call);
+    // Blood red for admin-placed calls; takeover button for non-admins
+    main.className = `twi-call-main twi-call-called${isOwnCall ? "" : " twi-call-readonly"}${adminPlaced ? " twi-call-admin" : ""}`;
+    main.disabled = isOwnCall ? false : !adminPlaced; // non-admin can click admin calls to take over
+    label.textContent = adminPlaced && !isOwnCall ? "TAKE" : format(seconds);
     main.removeAttribute("title");
     meta.textContent = call.calledByName;
     meta.title = `${call.calledByName} [${call.calledById}]`;
@@ -852,6 +890,9 @@
     .members-list li.twi-assist-row{outline:2px solid rgba(240,140,0,.75);outline-offset:-2px}
     .members-list li.twi-hosp-row .twi-call-hosp{background:rgba(52,100,185,.82)!important;border-color:rgba(100,160,255,.4)!important}
     .members-list li.twi-hosp-row .twi-call-hosp .twi-state-dot{background:#69a0ff}
+    .twi-call-admin{background:#8b0000!important;border-color:rgba(255,80,80,.35)!important;color:#fff!important;cursor:pointer!important}
+    .twi-call-admin .twi-state-dot{background:#ff4444!important}
+    .twi-call-admin.twi-call-readonly{cursor:pointer!important}
 
     /* ── Status chip ── */
     #twi-faction-calls-status{

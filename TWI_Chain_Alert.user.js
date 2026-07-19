@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.1.9
+// @version      1.2.0
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Alerts at 5 hits from bonus, personalised banner for assigned hitters.
 // @license      MIT
@@ -257,7 +257,7 @@
     banner.className = diff === 1 ? "twi-alert-mine-urgent" : "twi-alert-mine";
     banner.style.display = "";
     if (diff === 1) {
-      banner.textContent = `\uD83C\uDFAF YOUR HIT \u2014 Bonus ${bonusNumber} is NEXT! Make it count!`;
+      banner.textContent = `\uD83D\uDEA8 ATTACK NOW \u2014 Bonus ${bonusNumber} hit is YOURS!`;
     } else {
       banner.textContent = `\uD83C\uDFAF YOUR HIT in ${diff} \u2014 Get ready for bonus ${bonusNumber}!`;
     }

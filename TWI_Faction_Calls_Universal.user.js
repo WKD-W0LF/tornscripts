@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Faction_Calls (Universal)
 // @namespace    twilight-reborn
-// @version      2.0.17
+// @version      2.0.18
 // @author       Leandria & Wolf (Universal: Bob)
 // @description  Shared target calls, priorities and assist requests for Twilight - Reborn [56966]. Optimized for all devices: mobile, tablet, and desktop.
 // @license      MIT
@@ -25,7 +25,7 @@
   const ALLOWED_FACTION_ID = 56966;
   // Faction admins — can place priority/assist calls on unclaimed targets.
   // Their calls can be taken over by any member clicking the CALL button.
-  const ADMIN_IDS = new Set(["3647423","3917106","3658650","3855001","3926412","4152155","4157019"]);
+  const ADMIN_IDS = new Set(["3647423","3917106","3658650","3855001","3926412","4152155"]);
   // 8s poll = 7.5 calls/min per device.
   // At 20 active users that is 150 calls/min to the server — monitor if load increases.
   // All refresh triggers (interval, visibilitychange, hashchange) share the same
@@ -517,9 +517,10 @@
       const live = targetRows().find((r) => r.id === row.id) || row;
       const call = state.calls.get(row.id);
       if (!call) { claim(live); return; }
-      // Admin call — non-admins can take it over; admins release their own
-      if (isAdminCall(call) && !isAdmin()) { takeover(live); return; }
-      if (state.player && String(call.calledById) === String(state.player.id)) release(live, call);
+      const isOwn = state.player && String(call.calledById) === String(state.player.id);
+      // Any non-owner can take over an admin-placed call (including other admins)
+      if (isAdminCall(call) && !isOwn) { takeover(live); return; }
+      if (isOwn) release(live, call);
     });
     control.querySelector(".twi-priority").addEventListener("click", (e) => {
       e.preventDefault(); e.stopPropagation();

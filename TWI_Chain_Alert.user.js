@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.0.8
+// @version      1.0.9
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Shows an in-page banner when the chain is 2 or 1 hit away from a bonus number.
 // @license      MIT
@@ -214,14 +214,27 @@
 
   let settingsPanelInjected = false;
 
+  // Find the sidebar Lists group (Friends / Enemies / Targets)
+  function findListsGroup() {
+    // Torn renders the Lists nav block as #nav-group-lists; fall back to
+    // any element whose text content heading is "Lists" inside the sidebar.
+    return (
+      document.getElementById("nav-group-lists") ||
+      Array.from(document.querySelectorAll("#sidebar .title, #sidebar h5, #sidebar .header"))
+        .find(el => el.textContent.trim() === "Lists")
+        ?.closest("ul, div, li") ||
+      null
+    );
+  }
+
   function mountSettingsPanel(panel) {
-    const warList = document.getElementById("faction_war_list_id");
-    if (!warList) {
+    const listsGroup = findListsGroup();
+    if (!listsGroup) {
       panel.remove();
       return;
     }
-    if (panel.previousSibling !== warList) {
-      warList.after(panel);
+    if (panel.previousSibling !== listsGroup) {
+      listsGroup.after(panel);
     }
   }
 
@@ -231,19 +244,21 @@
       if (panel) mountSettingsPanel(panel);
       return;
     }
-    if (!document.getElementById("faction_war_list_id")) return;
+    if (!findListsGroup()) return;
 
-    // Use a <details> with Torn's native accordion classes so it blends in
-    // with the page — same pattern as Torn War Stuff Enhanced Settings bar.
-    const panel = document.createElement("details");
+    // Plain <div> styled to match the sidebar — no Torn accordion classes
+    // since those are scoped to the main content column.
+    const panel = document.createElement("div");
     panel.id = "twi-alert-settings";
-    panel.className = "accordion cont-gray border-round twi-alert-settings-details";
+    panel.className = "twi-alert-settings-details";
 
+    panel.dataset.open = "false";
     panel.innerHTML = `
-      <summary id="twi-alert-settings-header">
+      <div id="twi-alert-settings-header">
+        <span id="twi-alert-settings-arrow">&#9658;</span>
         <strong>TWI Chain Alert Settings</strong>
-      </summary>
-      <div id="twi-alert-settings-body">
+      </div>
+      <div id="twi-alert-settings-body" style="display:none">
 
         <div class="twi-settings-row">
           <label for="twi-alert-apikey"><strong>Torn API Key:</strong></label>
@@ -278,6 +293,14 @@
         </div>
 
       </div>`;
+
+    // Toggle open/close on header click
+    panel.querySelector("#twi-alert-settings-header").addEventListener("click", () => {
+      const open = panel.dataset.open === "true";
+      panel.dataset.open = open ? "false" : "true";
+      panel.querySelector("#twi-alert-settings-body").style.display = open ? "none" : "";
+      panel.querySelector("#twi-alert-settings-arrow").textContent = open ? "\u25BA" : "\u25BC";
+    });
 
     mountSettingsPanel(panel);
     settingsPanelInjected = true;
@@ -417,23 +440,26 @@
       50%      { opacity: 0.75; }
     }
 
-    /* ── Settings inline accordion panel (matches TWSE style) ── */
+    /* ── Settings sidebar panel ── */
     .twi-alert-settings-details {
-      margin: 6px 0;
+      margin: 4px 0 0;
     }
     #twi-alert-settings-header {
       cursor: pointer;
       user-select: none;
       font-size: 13px;
       font-weight: 700;
-      list-style: none;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
+      padding: 8px 10px;
+      background: #2a2a2a;
+      border-top: 1px solid #3a3a3a;
     }
-    #twi-alert-settings-header::-webkit-details-marker { display: none; }
-    #twi-alert-settings-body  { padding: 14px 16px 16px; }
-    .twi-settings-body    { padding: 14px 16px 16px; }
+    #twi-alert-settings-header:hover { background: #333; }
+    #twi-alert-settings-arrow { font-size: 10px; color: #888; }
+    #twi-alert-settings-body  { padding: 10px 12px 14px; background: #1e1e1e; border-top: 1px solid #3a3a3a; }
+    .twi-settings-body    { padding: 10px 12px 14px; }
     .twi-settings-row     { margin-bottom: 14px; }
     .twi-settings-row-inline {
       display: flex; align-items: center; gap: 8px; margin-bottom: 10px;

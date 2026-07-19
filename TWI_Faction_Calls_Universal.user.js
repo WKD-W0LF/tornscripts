@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Faction_Calls (Universal)
 // @namespace    twilight-reborn
-// @version      2.0.10
+// @version      2.0.11
 // @author       Leandria & Wolf (Universal: Bob)
 // @description  Shared target calls, priorities and assist requests for Twilight - Reborn [56966]. Optimized for all devices: mobile, tablet, and desktop.
 // @license      MIT
@@ -367,16 +367,14 @@
     state.polling = true;
     try {
       const { data } = await authRequest("GET", "/calls");
+      console.log(`[TWI] GET /calls: ${JSON.stringify(data.calls?.map(c=>({id:c.targetId,rem:Math.round((Date.parse(c.expiresAt)-Date.now())/1000)})))}`);
       // Rebuild the calls map, but preserve any locally-extended expiresAt
       // (e.g. hospital timer override) that is longer than the server's value.
       state.calls = new Map((data.calls || []).map((c) => {
         const id = String(c.targetId);
         const existing = state.calls.get(id);
         if (existing?.expiresAt && Date.parse(existing.expiresAt) > Date.parse(c.expiresAt)) {
-          console.log(`[TWI] refreshCalls: preserving local expiresAt for ${id}: ${existing.expiresAt} > server ${c.expiresAt}`);
           c.expiresAt = existing.expiresAt;
-        } else if (existing) {
-          console.log(`[TWI] refreshCalls: server wins for ${id}: server=${c.expiresAt} local=${existing.expiresAt}`);
         }
         return [id, c];
       }));
@@ -549,8 +547,10 @@
     assist.classList.toggle("active", Boolean(call.assistRequested));
 
     if (seconds <= 0) {
-      console.log(`[TWI] renderRow: deleting expired call for ${row.id}, expiresAt=${call.expiresAt}`);
+      console.log(`[TWI] renderRow: EXPIRED id=${row.id} expiresAt=${call.expiresAt} remaining=${seconds}s`);
       state.calls.delete(row.id);
+    } else {
+      console.log(`[TWI] renderRow: LIVE id=${row.id} remaining=${seconds}s inHosp=${hospitalised(row.status)}`);
     }
   }
 

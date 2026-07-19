@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.0.7
+// @version      1.0.8
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Shows an in-page banner when the chain is 2 or 1 hit away from a bonus number.
 // @license      MIT
@@ -215,12 +215,14 @@
   let settingsPanelInjected = false;
 
   function mountSettingsPanel(panel) {
-    if (!isChainPage()) {
-      panel.style.display = "none";
+    const warList = document.getElementById("faction_war_list_id");
+    if (!warList) {
+      panel.remove();
       return;
     }
-    panel.style.display = "";
-    if (!panel.isConnected) document.body.appendChild(panel);
+    if (panel.previousSibling !== warList) {
+      warList.after(panel);
+    }
   }
 
   function injectSettingsPanel() {
@@ -229,21 +231,19 @@
       if (panel) mountSettingsPanel(panel);
       return;
     }
-    if (!document.querySelector("div.chain-box")) return;
+    if (!document.getElementById("faction_war_list_id")) return;
 
-    // Use a plain <div> — NOT a <details> — so it is never affected by any
-    // parent <details> toggle. Rendered as a fixed floating panel on the page.
-    const panel = document.createElement("div");
+    // Use a <details> with Torn's native accordion classes so it blends in
+    // with the page — same pattern as Torn War Stuff Enhanced Settings bar.
+    const panel = document.createElement("details");
     panel.id = "twi-alert-settings";
+    panel.className = "accordion cont-gray border-round twi-alert-settings-details";
 
-    // Collapsed state tracked manually via data attribute
-    panel.dataset.open = "false";
     panel.innerHTML = `
-      <div id="twi-alert-settings-header">
-        <span id="twi-alert-settings-arrow">\u25BA</span>
+      <summary id="twi-alert-settings-header">
         <strong>TWI Chain Alert Settings</strong>
-      </div>
-      <div id="twi-alert-settings-body" style="display:none">
+      </summary>
+      <div id="twi-alert-settings-body">
 
         <div class="twi-settings-row">
           <label for="twi-alert-apikey"><strong>Torn API Key:</strong></label>
@@ -278,14 +278,6 @@
         </div>
 
       </div>`;
-
-    // Toggle open/close on header click
-    panel.querySelector("#twi-alert-settings-header").addEventListener("click", () => {
-      const open = panel.dataset.open === "true";
-      panel.dataset.open = open ? "false" : "true";
-      panel.querySelector("#twi-alert-settings-body").style.display = open ? "none" : "";
-      panel.querySelector("#twi-alert-settings-arrow").textContent = open ? "\u25BA" : "\u25BC";
-    });
 
     mountSettingsPanel(panel);
     settingsPanelInjected = true;
@@ -364,20 +356,25 @@
     if (!isChainPage()) hideBanner();
   }
 
-  const pageObserver = new MutationObserver((mutations) => {
-    // Ignore mutations caused by our own elements
-    for (const m of mutations) {
-      for (const node of [...m.addedNodes, ...m.removedNodes]) {
-        if (!(node instanceof Element)) continue;
-        if (node.id === "twi-alert-banner" ||
-            node.id === "twi-alert-settings") return;
+  // Observe #factions (same anchor TWSE uses) so we re-mount after SPA nav
+  function startObserver() {
+    const root = document.getElementById("factions") || document.body || document.documentElement;
+    const pageObserver = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        for (const node of [...m.addedNodes, ...m.removedNodes]) {
+          if (!(node instanceof Element)) continue;
+          if (node.id === "twi-alert-banner" ||
+              node.id === "twi-alert-settings") return;
+        }
       }
-    }
-    ensureUI();
-  });
-  pageObserver.observe(document.body || document.documentElement, { childList: true, subtree: true });
+      ensureUI();
+    });
+    pageObserver.observe(root, { childList: true, subtree: true });
+  }
+  startObserver();
 
   window.addEventListener("hashchange", () => {
+    settingsPanelInjected = false;   // force re-inject after SPA tab switch
     ensureUI();
     if (isChainPage() && state.enabled && state.apiKey) {
       lastPollTime = 0;
@@ -420,35 +417,21 @@
       50%      { opacity: 0.75; }
     }
 
-    /* ── Settings floating panel ── */
-    #twi-alert-settings {
-      position: fixed;
-      bottom: 100px;
-      left: 12px;
-      z-index: 10000;
-      width: 320px;
-      background: #1e1e1e;
-      border: 1px solid #444;
-      border-radius: 8px;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.5);
-      font-size: 13px;
-      color: #ddd;
-      overflow: hidden;
+    /* ── Settings inline accordion panel (matches TWSE style) ── */
+    .twi-alert-settings-details {
+      margin: 6px 0;
     }
     #twi-alert-settings-header {
-      padding: 10px 14px;
-      background: #2a2a2a;
       cursor: pointer;
       user-select: none;
       font-size: 13px;
       font-weight: 700;
-      border-bottom: 1px solid #444;
+      list-style: none;
       display: flex;
       align-items: center;
       gap: 8px;
     }
-    #twi-alert-settings-header:hover { background: #333; }
-    #twi-alert-settings-arrow { font-size: 10px; color: #888; }
+    #twi-alert-settings-header::-webkit-details-marker { display: none; }
     #twi-alert-settings-body  { padding: 14px 16px 16px; }
     .twi-settings-body    { padding: 14px 16px 16px; }
     .twi-settings-row     { margin-bottom: 14px; }

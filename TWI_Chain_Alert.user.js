@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.0.5
+// @version      1.0.6
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Shows an in-page banner when the chain is 2 or 1 hit away from a bonus number.
 // @license      MIT
@@ -216,31 +216,11 @@
 
   function mountSettingsPanel(panel) {
     if (!isChainPage()) {
-      if (panel.isConnected) panel.remove();
+      panel.style.display = "none";
       return;
     }
-    if (panel.isConnected) return;
-    // div.chain-box is inside a <details> element — we must escape that entire
-    // details/summary chain before inserting, otherwise clicking our <details>
-    // summary toggles the parent chain widget instead of ours.
-    // Walk up until we find a non-<details>, non-<summary> block ancestor.
-    const chainBox = findChainContainer();
-    let anchor = chainBox?.parentNode || document.body;
-    while (anchor && (anchor.tagName === "DETAILS" || anchor.tagName === "SUMMARY")) {
-      anchor = anchor.parentNode;
-    }
-    // Insert our panel as a sibling AFTER the chain widget's top-level ancestor
-    // within the walked-to container, so it appears below the chain block.
-    const chainTop = chainBox ? (() => {
-      let el = chainBox;
-      while (el.parentNode && el.parentNode !== anchor) el = el.parentNode;
-      return el;
-    })() : null;
-    if (chainTop && chainTop.parentNode === anchor) {
-      chainTop.after(panel);
-    } else {
-      anchor.appendChild(panel);
-    }
+    panel.style.display = "";
+    if (!panel.isConnected) document.body.appendChild(panel);
   }
 
   function injectSettingsPanel() {
@@ -249,17 +229,21 @@
       if (panel) mountSettingsPanel(panel);
       return;
     }
-    // Wait until chain-box is in the DOM before injecting
     if (!document.querySelector("div.chain-box")) return;
 
-    const panel = document.createElement("details");
+    // Use a plain <div> — NOT a <details> — so it is never affected by any
+    // parent <details> toggle. Rendered as a fixed floating panel on the page.
+    const panel = document.createElement("div");
     panel.id = "twi-alert-settings";
-    panel.className = "accordion cont-gray border-round twi-settings-details";
+
+    // Collapsed state tracked manually via data attribute
+    panel.dataset.open = "false";
     panel.innerHTML = `
-      <summary style="cursor:pointer;font-weight:bold;user-select:none;">
-        TWI Chain Alert Settings
-      </summary>
-      <div class="twi-settings-body">
+      <div id="twi-alert-settings-header">
+        <span id="twi-alert-settings-arrow">\u25BA</span>
+        <strong>TWI Chain Alert Settings</strong>
+      </div>
+      <div id="twi-alert-settings-body" style="display:none">
 
         <div class="twi-settings-row">
           <label for="twi-alert-apikey"><strong>Torn API Key:</strong></label>
@@ -294,6 +278,14 @@
         </div>
 
       </div>`;
+
+    // Toggle open/close on header click
+    panel.querySelector("#twi-alert-settings-header").addEventListener("click", () => {
+      const open = panel.dataset.open === "true";
+      panel.dataset.open = open ? "false" : "true";
+      panel.querySelector("#twi-alert-settings-body").style.display = open ? "none" : "";
+      panel.querySelector("#twi-alert-settings-arrow").textContent = open ? "\u25BA" : "\u25BC";
+    });
 
     mountSettingsPanel(panel);
     settingsPanelInjected = true;
@@ -428,8 +420,36 @@
       50%      { opacity: 0.75; }
     }
 
-    /* ── Settings accordion panel (mirrors faction calls script) ── */
-    .twi-settings-details { margin-top: 10px; }
+    /* ── Settings floating panel ── */
+    #twi-alert-settings {
+      position: fixed;
+      bottom: 100px;
+      left: 12px;
+      z-index: 10000;
+      width: 320px;
+      background: #1e1e1e;
+      border: 1px solid #444;
+      border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+      font-size: 13px;
+      color: #ddd;
+      overflow: hidden;
+    }
+    #twi-alert-settings-header {
+      padding: 10px 14px;
+      background: #2a2a2a;
+      cursor: pointer;
+      user-select: none;
+      font-size: 13px;
+      font-weight: 700;
+      border-bottom: 1px solid #444;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #twi-alert-settings-header:hover { background: #333; }
+    #twi-alert-settings-arrow { font-size: 10px; color: #888; }
+    #twi-alert-settings-body  { padding: 14px 16px 16px; }
     .twi-settings-body    { padding: 14px 16px 16px; }
     .twi-settings-row     { margin-bottom: 14px; }
     .twi-settings-row-inline {

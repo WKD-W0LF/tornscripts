@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.0.12
+// @version      1.0.13
 // @author       WKD-W0LF
-// @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Shows an in-page banner when the chain is 2 or 1 hit away from a bonus number.
+// @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Shows an in-page banner when the chain is 5 or fewer hits away from a bonus number.
 // @license      MIT
 // @match        https://www.torn.com/factions.php*
 // @match        https://torn.com/factions.php*
@@ -96,10 +96,11 @@
     state.alertedFor = bonusNumber;
     banner.className = level === "urgent" ? "twi-alert-urgent" : "twi-alert-warn";
     banner.style.display = "";
+    const diff = bonusNumber - state.chainCount;
     if (level === "urgent") {
-      banner.textContent = `\uD83D\uDEA8 Internal hits required \u2014 bonus at ${bonusNumber} NEXT HIT!`;
+      banner.textContent = `\uD83D\uDEA8 Slow Hits Please \u2014 Bonus Level in 1 hit! (${bonusNumber})`;
     } else {
-      banner.textContent = `\u26A0\uFE0F Internal hits required \u2014 bonus at ${bonusNumber} in 2 hits!`;
+      banner.textContent = `\u26A0\uFE0F Slow Hits Please \u2014 Bonus Level in ${diff} hits! (${bonusNumber})`;
     }
   }
 

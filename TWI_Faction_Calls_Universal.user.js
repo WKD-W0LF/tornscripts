@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Faction_Calls (Universal)
 // @namespace    twilight-reborn
-// @version      2.0.18
+// @version      2.0.20
 // @author       Leandria & Wolf (Universal: Bob)
 // @description  Shared target calls, priorities and assist requests for Twilight - Reborn [56966]. Optimized for all devices: mobile, tablet, and desktop.
 // @license      MIT
@@ -26,6 +26,8 @@
   // Faction admins — can place priority/assist calls on unclaimed targets.
   // Their calls can be taken over by any member clicking the CALL button.
   const ADMIN_IDS = new Set(["3647423","3917106","3658650","3855001","3926412","4152155"]);
+  // Display name overrides — shown in the call meta instead of the player's real name.
+  const DISPLAY_NAMES = new Map([["4157019", "\u{1F43A}\u{1F3D9}"]]);
   // 8s poll = 7.5 calls/min per device.
   // At 20 active users that is 150 calls/min to the server — monitor if load increases.
   // All refresh triggers (interval, visibilitychange, hashchange) share the same
@@ -433,15 +435,12 @@
 
   // Non-admin taking over an admin-placed call: DELETE with ?takeover=1 then claim.
   async function takeover(row) {
-    console.log(`[TWI] takeover START id=${row.id}`);
     busy(row.id, true);
     try {
-      const resp = await authRequest("DELETE", `/calls/${encodeURIComponent(row.id)}?takeover=1`);
-      console.log(`[TWI] takeover DELETE ok`, resp);
+      await authRequest("DELETE", `/calls/${encodeURIComponent(row.id)}?takeover=1`);
       state.calls.delete(row.id);
       busy(row.id, false);
     } catch (error) {
-      console.log(`[TWI] takeover DELETE error status=${error.status} msg=${error.message}`, error.data);
       busy(row.id, false);
       if (error.status === 404) {
         state.calls.delete(row.id);
@@ -451,10 +450,8 @@
         return;
       }
     }
-    console.log(`[TWI] takeover calling claim id=${row.id}`);
     const live = targetRows().find((r) => r.id === row.id) || row;
     await claim(live);
-    console.log(`[TWI] takeover DONE id=${row.id} call=`, state.calls.get(row.id));
   }
 
   async function release(row, call, reason = "manual") {
@@ -587,7 +584,8 @@
     main.disabled = isOwnCall ? false : !adminPlaced; // non-admin can click admin calls to take over
     label.textContent = adminPlaced && !isOwnCall ? "TAKE" : format(seconds);
     main.removeAttribute("title");
-    meta.textContent = call.calledByName;
+    const displayName = DISPLAY_NAMES.get(String(call.calledById)) || call.calledByName;
+    meta.textContent = displayName;
     meta.title = `${call.calledByName} [${call.calledById}]`;
     actions.hidden = false;
     priority.classList.toggle("active", Boolean(call.priority));

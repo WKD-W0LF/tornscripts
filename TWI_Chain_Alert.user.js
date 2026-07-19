@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.1.7
+// @version      1.1.8
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Alerts at 5 hits from bonus, personalised banner for assigned hitters.
 // @license      MIT
@@ -24,7 +24,7 @@
   const ALLOWED_FACTION_ID = 56966;
   const ADMIN_IDS       = new Set(["3647423","3917106","3658650","3855001","3926412","4152155","4157019"]);
   const BONUS_NUMBERS   = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000];
-  const POLL_MS         = 2000;
+  const POLL_MS         = 2000;   // used for ASSIGN_POLL_MS fallback only
   const ASSIGN_POLL_MS  = 30000;   // re-fetch assignments every 30s
   const PREFIX          = "twi-chain-alert-";
 
@@ -298,84 +298,43 @@
     }
   }
 
-  // ── Torn API polling ───────────────────────────────────────────────────────
+  // ── Chain count — read directly from the page DOM ─────────────────────────
+  // span.chain-box-center-stat is updated by Torn's own JS in real-time,
+  // so observing it gives zero-lag chain count with no API calls needed.
 
-  let lastPollTime = 0;
+  let chainObserver = null;
 
-  function pollDue() {
-    return Date.now() - lastPollTime >= POLL_MS;
+  function readChainFromDOM() {
+    const el = document.querySelector(".chain-box-center-stat");
+    if (!el) return null;
+    const n = parseInt(el.textContent.trim(), 10);
+    return isNaN(n) ? null : n;
   }
 
-  function fetchChainCount() {
-    if (state.polling) return;
-    if (!state.apiKey) return;
-    state.polling = true;
-
-    let settled = false;
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      state.polling = false;
-      state.lastError = "Request timed out";
-      updateSettingsPanel();
-    }, 12000);
-
-    GM_xmlhttpRequest({
-      method: "GET",
-      url: `${TORN_API_BASE}/v2/faction/chain?key=${state.apiKey}`,
-      headers: { "Content-Type": "application/json" },
-      onload(response) {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        state.polling = false;
-        let data;
-        try { data = JSON.parse(response.responseText || "{}"); }
-        catch {
-          state.lastError = `Invalid API response (${response.status})`;
-          updateSettingsPanel();
-          return;
-        }
-        if (response.status >= 200 && response.status < 300) {
-          const current = data?.chain?.current ?? null;
-          state.chainCount = current;
-          state.lastError = "";
-          fetchAssignments();
-          checkAlerts();
-          updateSettingsPanel();
-        } else {
-          const msg = data?.error?.error || data?.error || `HTTP ${response.status}`;
-          state.lastError = String(msg);
-          updateSettingsPanel();
-        }
-      },
-      onerror() {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        state.polling = false;
-        state.lastError = "Unable to reach Torn API";
-        updateSettingsPanel();
-      }
-    });
+  function onChainUpdate() {
+    const count = readChainFromDOM();
+    if (count === state.chainCount) return;   // no change
+    state.chainCount = count;
+    // Periodically sync assignments (throttled to ASSIGN_POLL_MS)
+    fetchAssignments();
+    checkAlerts();
+    updateSettingsPanel();
   }
 
-  function throttledPoll() {
-    if (!isChainPage()) return;
-    if (!state.enabled) return;
-    if (!state.apiKey) return;
-    if (state.polling) return;
-    if (document.visibilityState === "hidden") return;
-    if (!pollDue()) return;
-    lastPollTime = Date.now();
-    fetchChainCount();
+  function attachChainObserver() {
+    if (chainObserver) { chainObserver.disconnect(); chainObserver = null; }
+    const el = document.querySelector(".chain-box-center-stat");
+    if (!el) return;
+    chainObserver = new MutationObserver(onChainUpdate);
+    chainObserver.observe(el, { childList: true, subtree: true, characterData: true });
+    // Read immediately on attach
+    onChainUpdate();
   }
 
-  setInterval(throttledPoll, POLL_MS);
-
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") throttledPoll();
-  });
+  function detachChainObserver() {
+    if (chainObserver) { chainObserver.disconnect(); chainObserver = null; }
+    state.chainCount = null;
+  }
 
   // ── Assignment table (admin only) ──────────────────────────────────────────
 
@@ -699,7 +658,12 @@
   function ensureUI() {
     injectSettingsPanel();
     ensureBannerEl();
-    if (!isChainPage()) hideBanner();
+    if (isChainPage() && state.enabled) {
+      attachChainObserver();
+    } else {
+      detachChainObserver();
+      hideBanner();
+    }
   }
 
   function startObserver() {
@@ -719,13 +683,8 @@
 
   window.addEventListener("hashchange", () => {
     settingsPanelInjected = false;
+    detachChainObserver();
     ensureUI();
-    if (isChainPage() && state.enabled && state.apiKey) {
-      lastPollTime = 0;
-      throttledPoll();
-    } else {
-      hideBanner();
-    }
   });
 
   // ── CSS ────────────────────────────────────────────────────────────────────
@@ -888,8 +847,5 @@
   }
 
   ensureUI();
-  if (isChainPage() && state.enabled && state.apiKey) {
-    throttledPoll();
-  }
 
 })();

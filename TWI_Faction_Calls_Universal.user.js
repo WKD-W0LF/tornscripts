@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Faction_Calls (Universal)
 // @namespace    twilight-reborn
-// @version      2.0.23
+// @version      2.0.24
 // @author       Leandria & Wolf (Universal: Bob)
 // @description  Shared target calls, priorities and assist requests for Twilight - Reborn [56966]. Optimized for all devices: mobile, tablet, and desktop.
 // @license      MIT
@@ -609,44 +609,39 @@
     if (cb) cb.checked = state.enabled;
   }
 
-  function mountSettingsPanel(panel) {
-    // Only show the settings panel when the war tab is actually active (DOM check,
-    // not hash check — Chrome keeps the old hash when switching tabs).
-    // #faction_war_list_id exists on all tabs; .faction-war only exists on the war tab.
-    const warList = document.getElementById("faction_war_list_id");
-    const warTabActive = warList && Boolean(document.querySelector(".faction-war"));
+  // Find the Chain Alert panel or Targets row as the sidebar anchor
+  function findSidebarAnchor() {
+    const chainAlert = document.getElementById("twi-alert-settings");
+    if (chainAlert) return chainAlert;
+    const span = Array.from(document.querySelectorAll(".linkName___YZMai"))
+      .find(el => el.textContent.trim() === "Targets");
+    return span ? span.closest(".areaRow___Eheay") : null;
+  }
 
-    if (warTabActive) {
-      // Prefer to sit immediately after the TWSE settings panel if it's a sibling
-      const twsePanel = document.querySelector("twse-settings-panel");
-      const anchor = (twsePanel && twsePanel.parentNode === warList.parentNode) ? twsePanel : warList;
-      if (panel.previousElementSibling !== anchor) {
-        anchor.after(panel);
-      }
-    } else {
-      // Not on the war tab — hide the panel so it doesn't bleed into other tabs
-      if (panel.isConnected) panel.remove();
-    }
+  function mountSettingsPanel(panel) {
+    const anchor = findSidebarAnchor();
+    if (!anchor) { panel.remove(); return; }
+    if (panel.previousSibling !== anchor) anchor.after(panel);
   }
 
   function injectSettingsPanel() {
     if (settingsPanelInjected) {
-      // Already created — re-mount or hide based on current tab
       const panel = document.getElementById("twi-settings-details");
       if (panel) mountSettingsPanel(panel);
       return;
     }
-    // Need #factions in the DOM before we can do anything
-    if (!document.getElementById("factions")) return;
+    if (!findSidebarAnchor()) return;
 
-    const panel = document.createElement("details");
+    const panel = document.createElement("div");
     panel.id = "twi-settings-details";
-    panel.className = "accordion cont-gray border-round twi-settings-details";
+    panel.className = "twi-settings-details";
+    panel.dataset.open = "false";
     panel.innerHTML = `
-      <summary style="cursor:pointer;font-weight:bold;user-select:none;">
-        TWI Faction Calls Settings
-      </summary>
-      <div class="twi-settings-body">
+      <div id="twi-settings-header">
+        <span id="twi-settings-arrow">&#9658;</span>
+        <strong>TWI Faction Calls Settings</strong>
+      </div>
+      <div class="twi-settings-body" style="display:none">
 
         <div class="twi-settings-row">
           <label for="twi-settings-apikey"><strong>Torn API Key:</strong></label>
@@ -682,6 +677,14 @@
         </div>
 
       </div>`;
+
+    // Toggle open/close on header click
+    panel.querySelector("#twi-settings-header").addEventListener("click", () => {
+      const open = panel.dataset.open === "true";
+      panel.dataset.open = open ? "false" : "true";
+      panel.querySelector(".twi-settings-body").style.display = open ? "none" : "";
+      panel.querySelector("#twi-settings-arrow").textContent = open ? "\u25BA" : "\u25BC";
+    });
 
     mountSettingsPanel(panel);
     settingsPanelInjected = true;
@@ -781,7 +784,13 @@
     chip.type = "button";
     chip.addEventListener("click", () => {
       const details = document.getElementById("twi-settings-details");
-      if (details) { details.open = !details.open; details.scrollIntoView({ behavior: "smooth", block: "nearest" }); }
+      if (details) {
+        const open = details.dataset.open === "true";
+        details.dataset.open = open ? "false" : "true";
+        details.querySelector(".twi-settings-body").style.display = open ? "none" : "";
+        details.querySelector("#twi-settings-arrow").textContent = open ? "\u25BA" : "\u25BC";
+        details.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
     });
     document.body.appendChild(chip);
     return chip;
@@ -813,7 +822,12 @@
   if (typeof GM_registerMenuCommand === "function") {
     GM_registerMenuCommand("TWI Calls: Open Settings Panel", () => {
       const details = document.getElementById("twi-settings-details");
-      if (details) { details.open = true; details.scrollIntoView({ behavior: "smooth", block: "nearest" }); }
+      if (details) {
+        details.dataset.open = "true";
+        details.querySelector(".twi-settings-body").style.display = "";
+        details.querySelector("#twi-settings-arrow").textContent = "\u25BC";
+        details.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
     });
     GM_registerMenuCommand("TWI Calls: Forget API Key", async () => {
       if (!(await showConfirm("Forget the saved Target Caller API key and session?"))) return;
@@ -835,9 +849,19 @@
     }
     .twi-sort-toggle-checkbox{cursor:pointer;margin:0;width:13px;height:13px}
 
-    /* ── Settings accordion panel ── */
-    .twi-settings-details{margin-top:10px}
-    .twi-settings-body{padding:14px 16px 16px}
+    /* ── Settings sidebar panel ── */
+    .twi-settings-details { margin: 4px 0 0; }
+    #twi-settings-header {
+      cursor: pointer; user-select: none;
+      font-size: 13px; font-weight: 700;
+      display: flex; align-items: center; gap: 6px;
+      padding: 8px 10px;
+      background: #2a2a2a;
+      border-top: 1px solid #3a3a3a;
+    }
+    #twi-settings-header:hover { background: #333; }
+    #twi-settings-arrow { font-size: 10px; color: #888; }
+    .twi-settings-body { padding: 10px 12px 14px; background: #1e1e1e; border-top: 1px solid #3a3a3a; }
     .twi-settings-row{margin-bottom:14px}
     .twi-settings-row-inline{display:flex;align-items:center;gap:8px;margin-bottom:10px}
     .twi-settings-row-inline input[type=checkbox]{

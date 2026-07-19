@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.1.2
+// @version      1.1.3
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Alerts at 5 hits from bonus, personalised banner for assigned hitters.
 // @license      MIT
@@ -155,7 +155,11 @@
   // ── PUT / DELETE assignment (admin only) ───────────────────────────────────
 
   function putAssignment(bonusNumber, playerId, playerName, callback) {
-    if (!state.sessionToken) return;
+    if (!state.sessionToken) {
+      // Try to re-authenticate then retry once
+      authenticate(() => putAssignment(bonusNumber, playerId, playerName, callback));
+      return;
+    }
     GM_xmlhttpRequest({
       method: "PUT",
       url: `${API_BASE}/bonus-assignments/${bonusNumber}`,
@@ -542,8 +546,9 @@
         if (!modal.contains(e.target)) { dropdownEl.style.display = "none"; document.removeEventListener("click", closeDD); }
       });
 
-      saveBtn.disabled = false;
-      saveBtn.addEventListener("click", () => {
+      saveBtn.disabled = !pidEl.value;
+      // Use onclick to avoid accumulating listeners on cached re-opens
+      saveBtn.onclick = () => {
         const pid   = pidEl.value.trim();
         const pname = pnameEl.value.trim();
         if (!pid || !pname) { errEl.textContent = "Please select a member."; return; }
@@ -553,7 +558,7 @@
           if (err) { errEl.textContent = `Error: ${err}`; saveBtn.disabled = false; }
           else { modal.remove(); }
         });
-      });
+      };
     });
   }
 

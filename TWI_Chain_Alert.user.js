@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.0.9
+// @version      1.0.10
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Shows an in-page banner when the chain is 2 or 1 hit away from a bonus number.
 // @license      MIT
@@ -214,27 +214,27 @@
 
   let settingsPanelInjected = false;
 
-  // Find the sidebar Lists group (Friends / Enemies / Targets)
-  function findListsGroup() {
-    // Torn renders the Lists nav block as #nav-group-lists; fall back to
-    // any element whose text content heading is "Lists" inside the sidebar.
-    return (
-      document.getElementById("nav-group-lists") ||
-      Array.from(document.querySelectorAll("#sidebar .title, #sidebar h5, #sidebar .header"))
-        .find(el => el.textContent.trim() === "Lists")
-        ?.closest("ul, div, li") ||
-      null
-    );
+  // Find the Targets <li> — the last item in the sidebar Lists section.
+  // Torn renders the left nav as <ul> items; "Targets" has a link to
+  // /loader.php?sid=targetList or similar. We match by link text as a fallback.
+  function findTargetsItem() {
+    // Primary: any <li> in the left nav whose link href contains "targetList"
+    const byHref = document.querySelector('nav li a[href*="targetList"], #sidebar li a[href*="targetList"]');
+    if (byHref) return byHref.closest("li");
+    // Fallback: last <li> inside whichever <ul> contains a link with text "Targets"
+    const byText = Array.from(document.querySelectorAll("nav li a, #sidebar li a"))
+      .find(a => a.textContent.trim() === "Targets");
+    return byText ? byText.closest("li") : null;
   }
 
   function mountSettingsPanel(panel) {
-    const listsGroup = findListsGroup();
-    if (!listsGroup) {
+    const anchor = findTargetsItem();
+    if (!anchor) {
       panel.remove();
       return;
     }
-    if (panel.previousSibling !== listsGroup) {
-      listsGroup.after(panel);
+    if (panel.previousSibling !== anchor) {
+      anchor.after(panel);
     }
   }
 
@@ -244,7 +244,7 @@
       if (panel) mountSettingsPanel(panel);
       return;
     }
-    if (!findListsGroup()) return;
+    if (!findTargetsItem()) return;
 
     // Plain <div> styled to match the sidebar — no Torn accordion classes
     // since those are scoped to the main content column.

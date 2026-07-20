@@ -1,18 +1,12 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.2.3
+// @version      1.2.4
 // @author       WKD-W0LF
-// @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Alerts at 5 hits from bonus, personalised banner for assigned hitters. Works on all Torn pages.
+// @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Alerts at 5 hits from bonus, personalised banner for assigned hitters.
 // @license      MIT
 // @match        https://www.torn.com/factions.php*
 // @match        https://torn.com/factions.php*
-// @match        https://www.torn.com/index.php*
-// @match        https://www.torn.com/loader.php*
-// @match        https://www.torn.com/gym.php*
-// @match        https://www.torn.com/crimes.php*
-// @match        https://www.torn.com/messages.php*
-// @match        https://www.torn.com/forums.php*
 // @connect      api.torn.com
 // @connect      torn-calls.apps.gpu4.fusion.isys.hpc.dc.uq.edu.au
 // @grant        GM_addStyle
@@ -30,14 +24,9 @@
   const ALLOWED_FACTION_ID = 56966;
   const ADMIN_IDS       = new Set(["3647423","3917106","3658650","3855001","3926412","4152155","4157019"]);
   const BONUS_NUMBERS   = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000];
-  const POLL_MS         = 3000;   // API poll interval on non-faction pages
+  const POLL_MS         = 3000;   // kept for ASSIGN_POLL_MS reference
   const ASSIGN_POLL_MS  = 30000;  // re-fetch assignments every 30s
   const PREFIX          = "twi-chain-alert-";
-
-  // Detect TornPDA WebView — disable API polling there (DOM observer only)
-  const IS_PDA = typeof window.flutter_inappwebview !== "undefined" ||
-    navigator.userAgent.includes("TornPDA") ||
-    Boolean(window.__TornPDA);
 
   // ── State ──────────────────────────────────────────────────────────────────
 
@@ -706,16 +695,11 @@
     if (isFactionPage()) injectSettingsPanel();
 
     if (isChainPage()) {
-      // Faction page with chain widget — use zero-lag DOM observer
       stopApiPollTimer();
       attachChainObserver();
-    } else if (state.apiKey && !IS_PDA) {
-      // Other Torn pages on desktop — API poll so banner persists while navigating
-      // Disabled on TornPDA to avoid WebView hangs
+    } else {
       detachChainObserver();
-      startApiPollTimer();
-      // Delay first poll by 3s to let the page finish rendering first
-      setTimeout(pollChainApi, 3000);
+      hideBanner();
     }
   }
 

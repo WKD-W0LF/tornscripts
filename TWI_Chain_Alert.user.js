@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.2.7
+// @version      1.2.8
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Alerts at 5 hits from bonus, personalised banner for assigned hitters. Banner visible on all Torn pages.
 // @license      MIT
@@ -512,13 +512,15 @@
   let settingsPanelInjected = false;
 
   // Find the Targets row in the React-rendered sidebar.
-  // DOM structure: span.linkName___YZMai > a.link___tg6eQ > div.areaRow___Eheay
+  // Result is cached — only re-queries when the cached element leaves the DOM,
+  // avoiding an expensive querySelectorAll("a") scan every 2s on tablet/mobile.
+  let _targetsRowCache = null;
   function findTargetsRow() {
-    // Match on stable link text — not CSS-module class names whose hashes
-    // change with every Torn frontend build.
+    if (_targetsRowCache && _targetsRowCache.isConnected) return _targetsRowCache;
     const link = Array.from(document.querySelectorAll("a"))
       .find(a => a.textContent.trim() === "Targets");
-    return link ? link.parentElement : null;
+    _targetsRowCache = link ? link.parentElement : null;
+    return _targetsRowCache;
   }
 
   function mountSettingsPanel(panel) {
@@ -699,23 +701,21 @@
     }
   }
 
-  // 2s interval: re-mount UI and refresh cache-based banner on non-faction pages.
-  // Cheap — no DOM traversal, no network calls.
+  // 2s interval: lightweight UI maintenance.
+  // - Faction page: only re-mounts settings panel if not yet injected;
+  //   attaches/detaches chain observer as needed. No DOM scans if stable.
+  // - Other pages: reads localStorage cache (no network, no DOM queries).
   setInterval(() => {
     if (!state.enabled) return;
     ensureBannerEl();
     if (isFactionPage()) {
-      injectSettingsPanel();
+      if (!settingsPanelInjected) injectSettingsPanel();
       if (isChainPage() && !chainObserver) attachChainObserver();
       else if (!isChainPage() && chainObserver) detachChainObserver();
     } else {
-      // Non-faction: refresh banner from localStorage cache
       const count = readChainFromCache();
-      if (count !== null) {
-        applyChainCount(count);
-      } else {
-        hideBanner();
-      }
+      if (count !== null) applyChainCount(count);
+      else hideBanner();
     }
   }, 2000);
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.3.3
+// @version      1.3.4
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Settings on Torn preferences page. Banner visible on all Torn pages.
 // @license      MIT
@@ -461,6 +461,20 @@
 
   // ── Settings page injection (preferences.php only) ─────────────────────────
 
+  // Find the best container to append the settings panel to.
+  // Tries known Torn page wrappers first (works on TornPDA iOS/Android and
+  // desktop browsers), falls back to document.body as a guaranteed catch-all.
+  function findSettingsContainer() {
+    return (
+      document.querySelector("#mainContainer") ||
+      document.querySelector(".content-wrapper") ||
+      document.querySelector(".content") ||
+      document.querySelector("#content") ||
+      document.body ||
+      document.documentElement
+    );
+  }
+
   function injectSettingsPage() {
     if (document.getElementById("twi-alert-settings")) return;
 
@@ -468,38 +482,56 @@
     panel.id = "twi-alert-settings";
     panel.innerHTML = `
       <div class="twi-prefs-card">
-        <div class="twi-prefs-title">TWI Chain Alert</div>
+        <button type="button" class="twi-prefs-header" aria-expanded="false">
+          <span class="twi-prefs-arrow" aria-hidden="true">&#9658;</span>
+          <span class="twi-prefs-title-text">TWI Chain Alert Settings</span>
+          <span class="twi-prefs-status-badge" id="twi-alert-badge"></span>
+        </button>
+        <div class="twi-prefs-body" hidden>
 
-        <div class="twi-settings-row">
-          <label for="twi-alert-apikey"><strong>Torn API Key</strong></label>
-          <input type="text" id="twi-alert-apikey" class="twi-settings-input"
-            maxlength="16" placeholder="Paste 16-char API key here..."
-            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
-          <p class="twi-settings-hint">
-            Provide your 16-character Torn API key with <em>Faction</em> read access.
-          </p>
-        </div>
+          <div class="twi-settings-row">
+            <label for="twi-alert-apikey"><strong>Torn API Key</strong></label>
+            <input type="text" id="twi-alert-apikey" class="twi-settings-input"
+              maxlength="16" placeholder="Paste 16-char API key here..."
+              autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+            <p class="twi-settings-hint">
+              Provide your 16-character Torn API key with <em>Faction</em> read access.
+            </p>
+          </div>
 
-        <div class="twi-settings-row twi-settings-row-inline">
-          <input type="checkbox" id="twi-alert-enabled" />
-          <label for="twi-alert-enabled">Enable TWI Chain Alert banners</label>
-        </div>
+          <div class="twi-settings-row twi-settings-row-inline">
+            <input type="checkbox" id="twi-alert-enabled" />
+            <label for="twi-alert-enabled">Enable TWI Chain Alert banners</label>
+          </div>
 
-        <div class="twi-settings-status" id="twi-alert-status-line"></div>
+          <div class="twi-settings-status" id="twi-alert-status-line"></div>
 
-        <div class="twi-settings-actions">
-          <button type="button" id="twi-alert-save" class="torn-btn twi-btn-save">Save &amp; Connect</button>
-          <button type="button" id="twi-alert-forget" class="torn-btn twi-btn-secondary">Forget API Key</button>
-          <span id="twi-alert-saved-msg" style="display:none;color:#4CAF50;font-weight:bold;margin-left:10px;">&#10003; Saved!</span>
-        </div>
+          <div class="twi-settings-actions">
+            <button type="button" id="twi-alert-save" class="torn-btn twi-btn-save">Save &amp; Connect</button>
+            <button type="button" id="twi-alert-forget" class="torn-btn twi-btn-secondary">Forget API Key</button>
+            <span id="twi-alert-saved-msg" style="display:none;color:#4CAF50;font-weight:bold;margin-left:10px;">&#10003; Saved!</span>
+          </div>
 
-        <div id="twi-assign-section">
-          <div class="twi-assign-heading">Bonus Hit Assignments</div>
-          <div id="twi-assign-table-wrap"></div>
+          <div id="twi-assign-section">
+            <div class="twi-assign-heading">Bonus Hit Assignments</div>
+            <div id="twi-assign-table-wrap"></div>
+          </div>
+
         </div>
       </div>`;
 
-    document.body.appendChild(panel);
+    // Toggle open/close
+    panel.querySelector(".twi-prefs-header").addEventListener("click", () => {
+      const body   = panel.querySelector(".twi-prefs-body");
+      const arrow  = panel.querySelector(".twi-prefs-arrow");
+      const header = panel.querySelector(".twi-prefs-header");
+      const open   = !body.hidden;
+      body.hidden  = open;
+      arrow.innerHTML = open ? "&#9658;" : "&#9660;";
+      header.setAttribute("aria-expanded", String(!open));
+    });
+
+    findSettingsContainer().appendChild(panel);
     updateSettingsPanel();
     renderAssignmentTable();
 
@@ -542,6 +574,7 @@
     const keyInput   = panel.querySelector("#twi-alert-apikey");
     const enabledCb  = panel.querySelector("#twi-alert-enabled");
     const statusLine = panel.querySelector("#twi-alert-status-line");
+    const badge      = panel.querySelector("#twi-alert-badge");
     if (keyInput && !keyInput.matches(":focus")) {
       keyInput.value = "";
       keyInput.placeholder = state.apiKey
@@ -553,12 +586,15 @@
       if (validSession() && state.playerName) {
         statusLine.textContent = `✓ Connected as ${state.playerName}${isAdmin() ? " (admin)" : ""}`;
         statusLine.style.color = "#4CAF50";
+        if (badge) { badge.textContent = "✓ Connected"; badge.className = "twi-prefs-status-badge ok"; }
       } else if (state.lastError) {
         statusLine.textContent = `✗ ${state.lastError}`;
         statusLine.style.color = "#e74c3c";
+        if (badge) { badge.textContent = "✗ Error"; badge.className = "twi-prefs-status-badge err"; }
       } else {
         statusLine.textContent = state.apiKey ? "Not connected — click Save & Connect." : "Enter an API key to get started.";
         statusLine.style.color = "#999";
+        if (badge) { badge.textContent = ""; badge.className = "twi-prefs-status-badge"; }
       }
     }
   }
@@ -653,25 +689,45 @@
     }
     @keyframes twi-pulse { 0%,100% { opacity:1; } 50% { opacity:0.75; } }
 
-    /* ── Preferences page section (body-appended, works on all layouts) ── */
+    /* ── Preferences page section ── */
     #twi-alert-settings {
       display: block !important;
       width: 100%; box-sizing: border-box;
-      padding: 12px 16px 20px;
+      padding: 8px 12px 4px;
       background: #181818;
       border-top: 3px solid #3a3a3a;
       margin-top: 8px;
+      position: relative; z-index: 1;
     }
     .twi-prefs-card {
       background: #1e1e1e; border: 1px solid #3a3a3a; border-radius: 8px;
-      padding: 16px 16px 20px; margin: 0 auto;
+      overflow: hidden; margin: 0 auto;
       width: 100%; max-width: 680px; box-sizing: border-box;
     }
-    .twi-prefs-title {
-      font-size: 15px; font-weight: 700; color: #f0f0f0;
-      margin-bottom: 16px; padding-bottom: 10px;
-      border-bottom: 1px solid #3a3a3a;
+    /* Accordion header — full-width clickable bar */
+    .twi-prefs-header {
+      display: flex; align-items: center; gap: 8px;
+      width: 100%; padding: 12px 16px;
+      background: #2a2a2a; border: none; border-radius: 0;
+      color: #f0f0f0; font-size: 14px; font-weight: 700;
+      cursor: pointer; text-align: left;
+      touch-action: manipulation; -webkit-user-select: none; user-select: none;
     }
+    .twi-prefs-header:hover, .twi-prefs-header:active { background: #333; }
+    .twi-prefs-arrow { font-size: 11px; color: #888; flex-shrink: 0; }
+    .twi-prefs-title-text { flex: 1; }
+    .twi-prefs-status-badge {
+      font-size: 11px; font-weight: 600; padding: 2px 7px;
+      border-radius: 10px; flex-shrink: 0;
+    }
+    .twi-prefs-status-badge.ok  { background: #1a4a1a; color: #4CAF50; }
+    .twi-prefs-status-badge.err { background: #4a1a1a; color: #e74c3c; }
+    /* Accordion body */
+    .twi-prefs-body {
+      padding: 16px 16px 20px;
+      border-top: 1px solid #3a3a3a;
+    }
+    .twi-prefs-body[hidden] { display: none; }
     .twi-settings-row     { margin-bottom: 14px; }
     .twi-settings-row label { font-size: 13px; color: #ccc; display: block; margin-bottom: 6px; }
     .twi-settings-row-inline { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }

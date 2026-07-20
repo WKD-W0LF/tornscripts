@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Faction_Calls (Universal)
 // @namespace    twilight-reborn
-// @version      2.1.2
+// @version      2.1.3
 // @author       Leandria & Wolf (Universal: Bob)
 // @description  Shared target calls, priorities and assist requests for Twilight - Reborn [56966]. Settings on Torn preferences page. Optimized for all devices.
 // @license      MIT
@@ -623,6 +623,17 @@
 
   function isSettingsPage() { return location.pathname.includes("/preferences.php"); }
 
+  function findSettingsContainer() {
+    return (
+      document.querySelector("#mainContainer") ||
+      document.querySelector(".content-wrapper") ||
+      document.querySelector(".content") ||
+      document.querySelector("#content") ||
+      document.body ||
+      document.documentElement
+    );
+  }
+
   function injectSettingsPage() {
     if (document.getElementById("twi-settings-details")) return;
 
@@ -630,34 +641,51 @@
     panel.id = "twi-settings-details";
     panel.innerHTML = `
       <div class="twi-prefs-card">
-        <div class="twi-prefs-title">TWI Faction Calls</div>
+        <button type="button" class="twi-prefs-header" aria-expanded="false">
+          <span class="twi-prefs-arrow" aria-hidden="true">&#9658;</span>
+          <span class="twi-prefs-title-text">TWI Faction Calls Settings</span>
+          <span class="twi-prefs-status-badge" id="twi-fc-badge"></span>
+        </button>
+        <div class="twi-prefs-body" hidden>
 
-        <div class="twi-settings-row">
-          <label for="twi-settings-apikey"><strong>Torn API Key</strong></label>
-          <input type="text" id="twi-settings-apikey" class="twi-settings-input"
-            maxlength="16" placeholder="Paste 16-char API key here..."
-            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
-          <p class="twi-settings-hint">
-            Provide your 16-character public API key named <em>Target Caller</em>.
-            Used only to confirm membership of Twilight&nbsp;&ndash;&nbsp;Reborn [56966].
-          </p>
-        </div>
+          <div class="twi-settings-row">
+            <label for="twi-settings-apikey"><strong>Torn API Key</strong></label>
+            <input type="text" id="twi-settings-apikey" class="twi-settings-input"
+              maxlength="16" placeholder="Paste 16-char API key here..."
+              autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+            <p class="twi-settings-hint">
+              Provide your 16-character public API key named <em>Target Caller</em>.
+              Used only to confirm membership of Twilight&nbsp;&ndash;&nbsp;Reborn [56966].
+            </p>
+          </div>
 
-        <div class="twi-settings-row twi-settings-row-inline">
-          <input type="checkbox" id="twi-settings-enabled" />
-          <label for="twi-settings-enabled">Enable TWI Faction Calls on the War Page</label>
-        </div>
+          <div class="twi-settings-row twi-settings-row-inline">
+            <input type="checkbox" id="twi-settings-enabled" />
+            <label for="twi-settings-enabled">Enable TWI Faction Calls on the War Page</label>
+          </div>
 
-        <div class="twi-settings-status" id="twi-settings-status-line"></div>
+          <div class="twi-settings-status" id="twi-settings-status-line"></div>
 
-        <div class="twi-settings-actions">
-          <button type="button" id="twi-settings-save" class="torn-btn twi-btn-save">Save &amp; Connect</button>
-          <button type="button" id="twi-settings-forget" class="torn-btn twi-btn-secondary">Forget API Key</button>
-          <span id="twi-settings-saved-msg" style="display:none;color:#4CAF50;font-weight:bold;margin-left:10px;">✓ Saved!</span>
+          <div class="twi-settings-actions">
+            <button type="button" id="twi-settings-save" class="torn-btn twi-btn-save">Save &amp; Connect</button>
+            <button type="button" id="twi-settings-forget" class="torn-btn twi-btn-secondary">Forget API Key</button>
+            <span id="twi-settings-saved-msg" style="display:none;color:#4CAF50;font-weight:bold;margin-left:10px;">✓ Saved!</span>
+          </div>
+
         </div>
       </div>`;
 
-    document.body.appendChild(panel);
+    panel.querySelector(".twi-prefs-header").addEventListener("click", () => {
+      const body   = panel.querySelector(".twi-prefs-body");
+      const arrow  = panel.querySelector(".twi-prefs-arrow");
+      const header = panel.querySelector(".twi-prefs-header");
+      const open   = !body.hidden;
+      body.hidden  = open;
+      arrow.innerHTML = open ? "&#9658;" : "&#9660;";
+      header.setAttribute("aria-expanded", String(!open));
+    });
+
+    findSettingsContainer().appendChild(panel);
     updateSettingsPanel();
 
     panel.querySelector("#twi-settings-save").addEventListener("click", async () => {
@@ -709,6 +737,7 @@
     const keyInput    = panel.querySelector("#twi-settings-apikey");
     const enabledInput = panel.querySelector("#twi-settings-enabled");
     const statusLine  = panel.querySelector("#twi-settings-status-line");
+    const badge       = panel.querySelector("#twi-fc-badge");
     if (keyInput && !keyInput.matches(":focus")) {
       keyInput.value = "";
       keyInput.placeholder = state.apiKey
@@ -721,12 +750,15 @@
         const adminBadge = isAdmin() ? " · ⭐ Admin" : "";
         statusLine.textContent = `✓ Connected as ${state.player?.name || "unknown"} [${state.player?.id || "?"}]${adminBadge}`;
         statusLine.style.color = "#4CAF50";
+        if (badge) { badge.textContent = "✓ Connected"; badge.className = "twi-prefs-status-badge ok"; }
       } else if (state.lastError) {
         statusLine.textContent = `✗ ${state.lastError}`;
         statusLine.style.color = "#e74c3c";
+        if (badge) { badge.textContent = "✗ Error"; badge.className = "twi-prefs-status-badge err"; }
       } else {
         statusLine.textContent = state.apiKey ? "Not connected — click Save & Connect." : "Enter an API key to get started.";
         statusLine.style.color = "#999";
+        if (badge) { badge.textContent = ""; badge.className = "twi-prefs-status-badge"; }
       }
     }
   }
@@ -764,25 +796,43 @@
     }
     .twi-sort-toggle-checkbox{cursor:pointer;margin:0;width:13px;height:13px}
 
-    /* ── Preferences page section (body-appended, works on all layouts) ── */
+    /* ── Preferences page section ── */
     #twi-settings-details {
       display: block !important;
       width: 100%; box-sizing: border-box;
-      padding: 12px 16px 20px;
+      padding: 8px 12px 4px;
       background: #181818;
       border-top: 3px solid #3a3a3a;
       margin-top: 8px;
+      position: relative; z-index: 1;
     }
     .twi-prefs-card {
       background: #1e1e1e; border: 1px solid #3a3a3a; border-radius: 8px;
-      padding: 16px 16px 20px; margin: 0 auto;
+      overflow: hidden; margin: 0 auto;
       width: 100%; max-width: 680px; box-sizing: border-box;
     }
-    .twi-prefs-title {
-      font-size: 15px; font-weight: 700; color: #f0f0f0;
-      margin-bottom: 16px; padding-bottom: 10px;
-      border-bottom: 1px solid #3a3a3a;
+    .twi-prefs-header {
+      display: flex; align-items: center; gap: 8px;
+      width: 100%; padding: 12px 16px;
+      background: #2a2a2a; border: none; border-radius: 0;
+      color: #f0f0f0; font-size: 14px; font-weight: 700;
+      cursor: pointer; text-align: left;
+      touch-action: manipulation; -webkit-user-select: none; user-select: none;
     }
+    .twi-prefs-header:hover, .twi-prefs-header:active { background: #333; }
+    .twi-prefs-arrow { font-size: 11px; color: #888; flex-shrink: 0; }
+    .twi-prefs-title-text { flex: 1; }
+    .twi-prefs-status-badge {
+      font-size: 11px; font-weight: 600; padding: 2px 7px;
+      border-radius: 10px; flex-shrink: 0;
+    }
+    .twi-prefs-status-badge.ok  { background: #1a4a1a; color: #4CAF50; }
+    .twi-prefs-status-badge.err { background: #4a1a1a; color: #e74c3c; }
+    .twi-prefs-body {
+      padding: 16px 16px 20px;
+      border-top: 1px solid #3a3a3a;
+    }
+    .twi-prefs-body[hidden] { display: none; }
     .twi-settings-row{margin-bottom:14px}
     .twi-settings-row label{font-size:13px;color:#ccc;display:block;margin-bottom:6px}
     .twi-settings-row-inline{display:flex;align-items:center;gap:8px;margin-bottom:14px}

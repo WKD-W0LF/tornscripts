@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.2.5
+// @version      1.2.6
 // @author       WKD-W0LF
-// @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Alerts at 5 hits from bonus, personalised banner for assigned hitters.
+// @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Alerts at 5 hits from bonus, personalised banner for assigned hitters. Banner visible on all Torn pages.
 // @license      MIT
-// @match        https://www.torn.com/factions.php*
-// @match        https://torn.com/factions.php*
+// @match        https://www.torn.com/*
+// @match        https://torn.com/*
 // @connect      api.torn.com
 // @connect      torn-calls.apps.gpu4.fusion.isys.hpc.dc.uq.edu.au
 // @grant        GM_addStyle
@@ -24,9 +24,10 @@
   const ALLOWED_FACTION_ID = 56966;
   const ADMIN_IDS       = new Set(["3647423","3917106","3658650","3855001","3926412","4152155","4157019"]);
   const BONUS_NUMBERS   = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000];
-  const POLL_MS         = 3000;   // kept for ASSIGN_POLL_MS reference
+  const CHAIN_CACHE_TTL = 10000;  // ms — hide banner if cache is older than this
   const ASSIGN_POLL_MS  = 30000;  // re-fetch assignments every 30s
   const PREFIX          = "twi-chain-alert-";
+  const CACHE_KEY       = `${PREFIX}chain-cache`;  // localStorage key for cross-page cache
 
   // ── State ──────────────────────────────────────────────────────────────────
 
@@ -314,8 +315,30 @@
     updateSettingsPanel();
   }
 
+  // Write count + timestamp to localStorage so other pages can read it
+  function writeCacheFromDOM() {
+    const count = readChainFromDOM();
+    if (count !== null) {
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ count, ts: Date.now() }));
+    } else {
+      localStorage.removeItem(CACHE_KEY);
+    }
+    return count;
+  }
+
+  // Read count from localStorage cache (used on non-faction pages)
+  function readChainFromCache() {
+    try {
+      const raw = localStorage.getItem(CACHE_KEY);
+      if (!raw) return null;
+      const { count, ts } = JSON.parse(raw);
+      if (Date.now() - ts > CHAIN_CACHE_TTL) return null;  // stale
+      return count;
+    } catch { return null; }
+  }
+
   function onChainUpdate() {
-    applyChainCount(readChainFromDOM());
+    applyChainCount(writeCacheFromDOM());
   }
 
   function attachChainObserver() {
@@ -661,21 +684,40 @@
 
     if (isChainPage()) {
       attachChainObserver();
-    } else {
+    } else if (isFactionPage()) {
+      // Faction page but chain widget not yet visible — wait for interval
       detachChainObserver();
       hideBanner();
+    } else {
+      // Non-faction page — read from localStorage cache written by faction tab
+      detachChainObserver();
+      const count = readChainFromCache();
+      if (count !== null) {
+        applyChainCount(count);
+      } else {
+        hideBanner();
+      }
     }
   }
 
-  // Poll UI mount every 2s — cheap check, avoids subtree MutationObserver
-  // which caused Firefox to flag the page as slow.
+  // 2s interval: re-mount UI and refresh cache-based banner on non-faction pages.
+  // Cheap — no DOM traversal, no network calls.
   setInterval(() => {
     if (!state.enabled) return;
-    injectSettingsPanel();
     ensureBannerEl();
-    // Re-attach chain observer if the widget appeared (e.g. after SPA nav)
-    if (isChainPage() && !chainObserver) attachChainObserver();
-    else if (!isChainPage() && chainObserver) detachChainObserver();
+    if (isFactionPage()) {
+      injectSettingsPanel();
+      if (isChainPage() && !chainObserver) attachChainObserver();
+      else if (!isChainPage() && chainObserver) detachChainObserver();
+    } else {
+      // Non-faction: refresh banner from localStorage cache
+      const count = readChainFromCache();
+      if (count !== null) {
+        applyChainCount(count);
+      } else {
+        hideBanner();
+      }
+    }
   }, 2000);
 
   window.addEventListener("hashchange", () => {

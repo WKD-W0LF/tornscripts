@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.3.4
+// @version      1.3.5
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Settings on Torn preferences page. Banner visible on all Torn pages.
 // @license      MIT
@@ -461,22 +461,17 @@
 
   // ── Settings page injection (preferences.php only) ─────────────────────────
 
-  // Find the best container to append the settings panel to.
-  // Tries known Torn page wrappers first (works on TornPDA iOS/Android and
-  // desktop browsers), falls back to document.body as a guaranteed catch-all.
-  function findSettingsContainer() {
-    return (
-      document.querySelector("#mainContainer") ||
-      document.querySelector(".content-wrapper") ||
-      document.querySelector(".content") ||
-      document.querySelector("#content") ||
-      document.body ||
-      document.documentElement
-    );
-  }
-
   function injectSettingsPage() {
     if (document.getElementById("twi-alert-settings")) return;
+    // Only inject once the preferences page content list is present.
+    // "General settings" is always the first item — its presence confirms
+    // the settings nav has rendered on all platforms (desktop, TornPDA iOS/Android).
+    if (!document.querySelector("ul li a[href*='preferences'], .settings-list, ul li a[href^='/preferences']")) {
+      // Fallback: accept any <ul> that contains settings-like links
+      const hasSettingsNav = Array.from(document.querySelectorAll("ul li"))
+        .some(li => /general\s+settings|security\s+settings/i.test(li.textContent));
+      if (!hasSettingsNav) return;  // page not ready yet — try again next interval tick
+    }
 
     const panel = document.createElement("div");
     panel.id = "twi-alert-settings";
@@ -531,7 +526,16 @@
       header.setAttribute("aria-expanded", String(!open));
     });
 
-    findSettingsContainer().appendChild(panel);
+    // Append after Torn's React root if present, otherwise end of body.
+    // This ensures our panel is never covered by React's re-render.
+    const reactRoot = document.getElementById("react-root") ||
+                      document.getElementById("root") ||
+                      document.getElementById("app");
+    if (reactRoot) {
+      reactRoot.insertAdjacentElement("afterend", panel);
+    } else {
+      document.body.appendChild(panel);
+    }
     updateSettingsPanel();
     renderAssignmentTable();
 
@@ -632,7 +636,7 @@
 
   // 2s interval: drives cache-based banner on non-faction pages + chain observer recovery.
   setInterval(() => {
-    if (isSettingsPage()) return;
+    if (isSettingsPage()) { injectSettingsPage(); return; }
     ensureBannerEl();
     if (!state.enabled) return;
     if (isFactionPage()) {
@@ -693,11 +697,12 @@
     #twi-alert-settings {
       display: block !important;
       width: 100%; box-sizing: border-box;
-      padding: 8px 12px 4px;
+      padding: 8px 12px 12px;
       background: #181818;
       border-top: 3px solid #3a3a3a;
-      margin-top: 8px;
-      position: relative; z-index: 1;
+      margin-top: 0;
+      position: relative; z-index: 10;
+      clear: both;
     }
     .twi-prefs-card {
       background: #1e1e1e; border: 1px solid #3a3a3a; border-radius: 8px;

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Faction_Calls (Universal)
 // @namespace    twilight-reborn
-// @version      2.1.3
+// @version      2.1.4
 // @author       Leandria & Wolf (Universal: Bob)
 // @description  Shared target calls, priorities and assist requests for Twilight - Reborn [56966]. Settings on Torn preferences page. Optimized for all devices.
 // @license      MIT
@@ -623,19 +623,12 @@
 
   function isSettingsPage() { return location.pathname.includes("/preferences.php"); }
 
-  function findSettingsContainer() {
-    return (
-      document.querySelector("#mainContainer") ||
-      document.querySelector(".content-wrapper") ||
-      document.querySelector(".content") ||
-      document.querySelector("#content") ||
-      document.body ||
-      document.documentElement
-    );
-  }
-
   function injectSettingsPage() {
     if (document.getElementById("twi-settings-details")) return;
+    // Only inject once the preferences page content list is present.
+    const hasSettingsNav = Array.from(document.querySelectorAll("ul li"))
+      .some(li => /general\s+settings|security\s+settings/i.test(li.textContent));
+    if (!hasSettingsNav) return;  // page not ready yet — try again next interval tick
 
     const panel = document.createElement("div");
     panel.id = "twi-settings-details";
@@ -685,7 +678,14 @@
       header.setAttribute("aria-expanded", String(!open));
     });
 
-    findSettingsContainer().appendChild(panel);
+    const reactRoot = document.getElementById("react-root") ||
+                      document.getElementById("root") ||
+                      document.getElementById("app");
+    if (reactRoot) {
+      reactRoot.insertAdjacentElement("afterend", panel);
+    } else {
+      document.body.appendChild(panel);
+    }
     updateSettingsPanel();
 
     panel.querySelector("#twi-settings-save").addEventListener("click", async () => {
@@ -800,11 +800,12 @@
     #twi-settings-details {
       display: block !important;
       width: 100%; box-sizing: border-box;
-      padding: 8px 12px 4px;
+      padding: 8px 12px 12px;
       background: #181818;
       border-top: 3px solid #3a3a3a;
-      margin-top: 8px;
-      position: relative; z-index: 1;
+      margin-top: 0;
+      position: relative; z-index: 10;
+      clear: both;
     }
     .twi-prefs-card {
       background: #1e1e1e; border: 1px solid #3a3a3a; border-radius: 8px;

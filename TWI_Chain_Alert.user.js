@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.2.7
+// @version      1.2.8
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Alerts at 5 hits from bonus, personalised banner for assigned hitters. Banner visible on all Torn pages.
 // @license      MIT
@@ -524,7 +524,7 @@
   function mountSettingsPanel(panel) {
     const anchor = findTargetsRow();
     if (!anchor) { panel.remove(); return; }
-    if (panel.previousSibling !== anchor) anchor.after(panel);
+    if (panel.previousElementSibling !== anchor) anchor.after(panel);
   }
 
   function injectSettingsPanel() {
@@ -691,9 +691,11 @@
       // Non-faction page — read from localStorage cache written by faction tab
       detachChainObserver();
       const count = readChainFromCache();
-      if (count !== null) {
-        applyChainCount(count);
-      } else {
+      if (count !== null && count !== state.chainCount) {
+        state.chainCount = count;
+        checkAlerts();
+        updateSettingsPanel();
+      } else if (count === null) {
         hideBanner();
       }
     }
@@ -709,11 +711,13 @@
       if (isChainPage() && !chainObserver) attachChainObserver();
       else if (!isChainPage() && chainObserver) detachChainObserver();
     } else {
-      // Non-faction: refresh banner from localStorage cache
+      // Non-faction: refresh banner from localStorage cache — no network calls
       const count = readChainFromCache();
-      if (count !== null) {
-        applyChainCount(count);
-      } else {
+      if (count !== null && count !== state.chainCount) {
+        state.chainCount = count;
+        checkAlerts();
+        updateSettingsPanel();
+      } else if (count === null) {
         hideBanner();
       }
     }

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Faction_Calls (Universal)
 // @namespace    twilight-reborn
-// @version      2.0.25
+// @version      2.0.26
 // @author       Leandria & Wolf (Universal: Bob)
 // @description  Shared target calls, priorities and assist requests for Twilight - Reborn [56966]. Optimized for all devices: mobile, tablet, and desktop.
 // @license      MIT
@@ -623,7 +623,7 @@
   function mountSettingsPanel(panel) {
     const anchor = findSidebarAnchor();
     if (!anchor) { panel.remove(); return; }
-    if (panel.previousSibling !== anchor) anchor.after(panel);
+    if (panel.previousElementSibling !== anchor) anchor.after(panel);
   }
 
   function injectSettingsPanel() {

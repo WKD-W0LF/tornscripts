@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.2.6
+// @version      1.2.7
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Alerts at 5 hits from bonus, personalised banner for assigned hitters. Banner visible on all Torn pages.
 // @license      MIT
@@ -514,9 +514,11 @@
   // Find the Targets row in the React-rendered sidebar.
   // DOM structure: span.linkName___YZMai > a.link___tg6eQ > div.areaRow___Eheay
   function findTargetsRow() {
-    const span = Array.from(document.querySelectorAll(".linkName___YZMai"))
-      .find(el => el.textContent.trim() === "Targets");
-    return span ? span.closest(".areaRow___Eheay") : null;
+    // Match on stable link text — not CSS-module class names whose hashes
+    // change with every Torn frontend build.
+    const link = Array.from(document.querySelectorAll("a"))
+      .find(a => a.textContent.trim() === "Targets");
+    return link ? link.parentElement : null;
   }
 
   function mountSettingsPanel(panel) {
@@ -616,10 +618,7 @@
       }
       setEnabled(newEnabled);
 
-      if (state.enabled && state.apiKey) {
-        lastPollTime = 0;
-        throttledPoll();
-      } else if (!state.enabled) {
+      if (!state.enabled) {
         hideBanner();
       }
 

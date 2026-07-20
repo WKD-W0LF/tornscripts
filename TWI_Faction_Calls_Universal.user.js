@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Faction_Calls (Universal)
 // @namespace    twilight-reborn
-// @version      2.0.24
+// @version      2.0.25
 // @author       Leandria & Wolf (Universal: Bob)
 // @description  Shared target calls, priorities and assist requests for Twilight - Reborn [56966]. Optimized for all devices: mobile, tablet, and desktop.
 // @license      MIT
@@ -609,13 +609,15 @@
     if (cb) cb.checked = state.enabled;
   }
 
-  // Find the Chain Alert panel or Targets row as the sidebar anchor
+  // Find the Chain Alert panel or Targets row as the sidebar anchor.
+  // Fallback uses stable link text — not CSS-module class names whose hashes
+  // change with every Torn frontend build.
   function findSidebarAnchor() {
     const chainAlert = document.getElementById("twi-alert-settings");
     if (chainAlert) return chainAlert;
-    const span = Array.from(document.querySelectorAll(".linkName___YZMai"))
-      .find(el => el.textContent.trim() === "Targets");
-    return span ? span.closest(".areaRow___Eheay") : null;
+    const link = Array.from(document.querySelectorAll("a"))
+      .find(a => a.textContent.trim() === "Targets");
+    return link ? link.parentElement : null;
   }
 
   function mountSettingsPanel(panel) {

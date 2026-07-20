@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.2.4
+// @version      1.2.5
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Alerts at 5 hits from bonus, personalised banner for assigned hitters.
 // @license      MIT
@@ -295,13 +295,9 @@
     }
   }
 
-  // ── Chain count ────────────────────────────────────────────────────────────
-  // On faction page: MutationObserver on .chain-box-center-stat — zero lag.
-  // On other pages:  API poll fallback so the banner persists while navigating.
+  // ── Chain count — MutationObserver on chain widget ─────────────────────────
 
   let chainObserver = null;
-  let apiPollTimer  = null;
-  let lastApiPoll   = 0;
 
   function readChainFromDOM() {
     const el = document.querySelector(".chain-box-center-stat");
@@ -334,37 +330,6 @@
 
   function detachChainObserver() {
     if (chainObserver) { chainObserver.disconnect(); chainObserver = null; }
-  }
-
-  function pollChainApi() {
-    if (!state.apiKey) return;
-    if (Date.now() - lastApiPoll < POLL_MS) return;
-    lastApiPoll = Date.now();
-    GM_xmlhttpRequest({
-      method: "GET",
-      url: `${TORN_API_BASE}/v2/faction/chain?key=${state.apiKey}`,
-      headers: { "Content-Type": "application/json" },
-      onload(response) {
-        let data;
-        try { data = JSON.parse(response.responseText || "{}"); } catch { return; }
-        if (response.status >= 200 && response.status < 300) {
-          applyChainCount(data?.chain?.current ?? null);
-        }
-      }
-    });
-  }
-
-  function startApiPollTimer() {
-    if (apiPollTimer) return;
-    apiPollTimer = setInterval(() => {
-      if (!state.enabled) return;
-      if (document.visibilityState === "hidden") return;
-      pollChainApi();
-    }, POLL_MS);
-  }
-
-  function stopApiPollTimer() {
-    if (apiPollTimer) { clearInterval(apiPollTimer); apiPollTimer = null; }
     state.chainCount = null;
   }
 
@@ -695,7 +660,6 @@
     if (isFactionPage()) injectSettingsPanel();
 
     if (isChainPage()) {
-      stopApiPollTimer();
       attachChainObserver();
     } else {
       detachChainObserver();
@@ -703,33 +667,21 @@
     }
   }
 
-  function startObserver() {
-    // Only observe DOM mutations on faction page; elsewhere we use API polling
-    if (!isFactionPage()) return;
-    const root = document.querySelector(".sidebar___c4dEc") || document.body || document.documentElement;
-    const pageObserver = new MutationObserver((mutations) => {
-      for (const m of mutations) {
-        for (const node of [...m.addedNodes, ...m.removedNodes]) {
-          if (!(node instanceof Element)) continue;
-          if (node.id === "twi-alert-banner" || node.id === "twi-alert-settings") return;
-        }
-      }
-      ensureUI();
-    });
-    pageObserver.observe(root, { childList: true, subtree: true });
-  }
-  startObserver();
+  // Poll UI mount every 2s — cheap check, avoids subtree MutationObserver
+  // which caused Firefox to flag the page as slow.
+  setInterval(() => {
+    if (!state.enabled) return;
+    injectSettingsPanel();
+    ensureBannerEl();
+    // Re-attach chain observer if the widget appeared (e.g. after SPA nav)
+    if (isChainPage() && !chainObserver) attachChainObserver();
+    else if (!isChainPage() && chainObserver) detachChainObserver();
+  }, 2000);
 
   window.addEventListener("hashchange", () => {
     settingsPanelInjected = false;
     detachChainObserver();
     ensureUI();
-  });
-
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && state.enabled && state.apiKey) {
-      if (!isChainPage()) pollChainApi();
-    }
   });
 
   // ── CSS ────────────────────────────────────────────────────────────────────

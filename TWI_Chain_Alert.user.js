@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.2.8
+// @version      1.2.9
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Alerts at 5 hits from bonus, personalised banner for assigned hitters. Banner visible on all Torn pages.
 // @license      MIT
@@ -32,9 +32,10 @@
   // ── State ──────────────────────────────────────────────────────────────────
 
   const state = {
-    apiKey:       localStorage.getItem(`${PREFIX}api-key`) || "",
-    sessionToken: localStorage.getItem(`${PREFIX}session`) || "",
-    enabled:      localStorage.getItem(`${PREFIX}enabled`) !== "false",
+    apiKey:          localStorage.getItem(`${PREFIX}api-key`) || "",
+    sessionToken:    localStorage.getItem(`${PREFIX}session`) || "",
+    sessionExpires:  localStorage.getItem(`${PREFIX}session-expires`) || "",
+    enabled:         localStorage.getItem(`${PREFIX}enabled`) !== "false",
     polling:      false,
     chainCount:   null,
     alertedFor:   null,    // bonus number currently shown in the banner
@@ -60,13 +61,25 @@
     localStorage.setItem(`${PREFIX}enabled`, value ? "true" : "false");
   }
 
-  function setSession(token, playerId, playerName) {
-    state.sessionToken = token || "";
-    state.playerId = String(playerId || "");
-    state.playerName = String(playerName || "");
+  function validSession() {
+    return Boolean(
+      state.sessionToken &&
+      state.sessionExpires &&
+      Date.parse(state.sessionExpires) - Date.now() > 60000
+    );
+  }
+
+  function setSession(token, expiresAt, playerId, playerName) {
+    state.sessionToken   = token || "";
+    state.sessionExpires = expiresAt || "";
+    state.playerId       = String(playerId || "");
+    state.playerName     = String(playerName || "");
     token
       ? localStorage.setItem(`${PREFIX}session`, token)
       : localStorage.removeItem(`${PREFIX}session`);
+    expiresAt
+      ? localStorage.setItem(`${PREFIX}session-expires`, expiresAt)
+      : localStorage.removeItem(`${PREFIX}session-expires`);
     state.playerId
       ? localStorage.setItem(`${PREFIX}player-id`, state.playerId)
       : localStorage.removeItem(`${PREFIX}player-id`);
@@ -93,6 +106,8 @@
 
   function authenticate(callback) {
     if (!state.apiKey) return;
+    // Skip the round-trip if the session is still valid — saves 2 Torn API calls
+    if (validSession()) { if (callback) callback(); return; }
     GM_xmlhttpRequest({
       method: "POST",
       url: `${API_BASE}/auth`,
@@ -102,7 +117,7 @@
         let data;
         try { data = JSON.parse(response.responseText || "{}"); } catch { return; }
         if (data.success && data.sessionToken) {
-          setSession(data.sessionToken, data.player?.id, data.player?.name);
+          setSession(data.sessionToken, data.expiresAt, data.player?.id, data.player?.name);
           updateSettingsPanel();
           renderAssignmentTable();   // re-render now that playerId is known
           if (callback) callback();
@@ -132,8 +147,9 @@
       headers: { "Authorization": `Bearer ${state.sessionToken}` },
       onload(response) {
         if (response.status === 401) {
-          // Session expired — re-auth silently
-          setSession("", "", "");
+          // Session expired — clear, re-auth, then re-fetch
+          setSession("", "", "", "");
+          state.lastAssignFetch = 0;  // allow fetchAssignments to fire after re-auth
           authenticate(() => fetchAssignments());
           return;
         }
@@ -630,7 +646,7 @@
     // Forget key button
     panel.querySelector("#twi-alert-forget").addEventListener("click", () => {
       setApiKey("");
-      setSession("", "", "");
+      setSession("", "", "", "");
       setEnabled(false);
       state.chainCount = null;
       state.assignments.clear();
@@ -877,16 +893,13 @@
 
   // ── Boot ───────────────────────────────────────────────────────────────────
 
-  // Authenticate on load if we have an API key but no session
-  if (state.apiKey && !state.sessionToken) {
+  // Authenticate if needed (skipped if session is still valid), then fetch assignments.
+  // validSession() guard inside authenticate() prevents burning Torn API calls on every page load.
+  if (state.apiKey) {
     authenticate(() => {
       state.lastAssignFetch = 0;
       fetchAssignments();
     });
-  } else if (state.apiKey && state.sessionToken) {
-    // Already have a session — fetch assignments immediately
-    state.lastAssignFetch = 0;
-    fetchAssignments();
   }
 
   ensureUI();

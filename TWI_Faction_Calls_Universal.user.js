@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         TWI Faction_Calls (Universal)
 // @namespace    twilight-reborn
-// @version      2.0.26
+// @version      2.1.0
 // @author       Leandria & Wolf (Universal: Bob)
-// @description  Shared target calls, priorities and assist requests for Twilight - Reborn [56966]. Optimized for all devices: mobile, tablet, and desktop.
+// @description  Shared target calls, priorities and assist requests for Twilight - Reborn [56966]. Settings on Torn preferences page. Optimized for all devices.
 // @license      MIT
 // @match        https://www.torn.com/factions.php*
 // @match        https://torn.com/factions.php*
+// @match        https://www.torn.com/preferences.php*
 // @match        https://torn.com/*
 // @connect      torn-calls.apps.gpu4.fusion.isys.hpc.dc.uq.edu.au
 // @grant        GM_addStyle
@@ -598,70 +599,42 @@
     if (seconds <= 0) state.calls.delete(row.id);
   }
 
-  // ── Settings panel — mirrors TWSE accordion exactly ───────────────────────
-  // Placement: immediately after the TWSE settings panel when found, otherwise
-  // after the last child of #factions. Re-checked on every DOM mutation.
+  // ── Settings page injection (preferences.php only) ─────────────────────────
 
-  let settingsPanelInjected = false;
+  function isSettingsPage() { return location.pathname.includes("/preferences.php"); }
 
-  function updateToggleChecked() {
-    const cb = document.getElementById("twi-settings-enabled");
-    if (cb) cb.checked = state.enabled;
-  }
+  function injectSettingsPage() {
+    if (document.getElementById("twi-settings-details")) return;
 
-  // Find the Chain Alert panel or Targets row as the sidebar anchor.
-  // Fallback uses stable link text — not CSS-module class names whose hashes
-  // change with every Torn frontend build.
-  function findSidebarAnchor() {
-    const chainAlert = document.getElementById("twi-alert-settings");
-    if (chainAlert) return chainAlert;
-    const link = Array.from(document.querySelectorAll("a"))
-      .find(a => a.textContent.trim() === "Targets");
-    return link ? link.parentElement : null;
-  }
-
-  function mountSettingsPanel(panel) {
-    const anchor = findSidebarAnchor();
-    if (!anchor) { panel.remove(); return; }
-    if (panel.previousElementSibling !== anchor) anchor.after(panel);
-  }
-
-  function injectSettingsPanel() {
-    if (settingsPanelInjected) {
-      const panel = document.getElementById("twi-settings-details");
-      if (panel) mountSettingsPanel(panel);
-      return;
+    // Insert nav item
+    const nav = document.querySelector(".settings-columns-wrap .settings-nav-wrap ul, .settings-menu ul, ul.settings-list");
+    if (nav) {
+      const li = document.createElement("li");
+      li.innerHTML = `<a href="#twi-faction-calls" class="t-blue-cont-wrap">TWI Faction Calls</a>`;
+      li.querySelector("a").addEventListener("click", e => {
+        e.preventDefault();
+        document.getElementById("twi-settings-details")?.scrollIntoView({ behavior: "smooth" });
+      });
+      nav.appendChild(li);
     }
-    if (!findSidebarAnchor()) return;
+
+    const main = document.querySelector(".content-wrapper, #mainContainer, .settings-columns-wrap .settings-content-wrap, main");
+    if (!main) return;
 
     const panel = document.createElement("div");
     panel.id = "twi-settings-details";
-    panel.className = "twi-settings-details";
-    panel.dataset.open = "false";
     panel.innerHTML = `
-      <div id="twi-settings-header">
-        <span id="twi-settings-arrow">&#9658;</span>
-        <strong>TWI Faction Calls Settings</strong>
-      </div>
-      <div class="twi-settings-body" style="display:none">
+      <div class="twi-prefs-card">
+        <div class="twi-prefs-title">TWI Faction Calls</div>
 
         <div class="twi-settings-row">
-          <label for="twi-settings-apikey"><strong>Torn API Key:</strong></label>
-          <input
-            type="text"
-            id="twi-settings-apikey"
-            class="twi-settings-input"
-            maxlength="16"
-            placeholder="Paste 16-char API key here..."
-            autocomplete="off"
-            autocorrect="off"
-            autocapitalize="off"
-            spellcheck="false"
-          />
+          <label for="twi-settings-apikey"><strong>Torn API Key</strong></label>
+          <input type="text" id="twi-settings-apikey" class="twi-settings-input"
+            maxlength="16" placeholder="Paste 16-char API key here..."
+            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
           <p class="twi-settings-hint">
-            <strong>Info:</strong> Provide your 16-character public API key named
-            <em>Target Caller</em>. It is only used to confirm membership of
-            Twilight&nbsp;&ndash;&nbsp;Reborn [56966].
+            Provide your 16-character public API key named <em>Target Caller</em>.
+            Used only to confirm membership of Twilight&nbsp;&ndash;&nbsp;Reborn [56966].
           </p>
         </div>
 
@@ -673,65 +646,42 @@
         <div class="twi-settings-status" id="twi-settings-status-line"></div>
 
         <div class="twi-settings-actions">
-          <button type="button" id="twi-settings-save" class="torn-btn twi-btn-save">Save Settings</button>
+          <button type="button" id="twi-settings-save" class="torn-btn twi-btn-save">Save &amp; Connect</button>
           <button type="button" id="twi-settings-forget" class="torn-btn twi-btn-secondary">Forget API Key</button>
           <span id="twi-settings-saved-msg" style="display:none;color:#4CAF50;font-weight:bold;margin-left:10px;">✓ Saved!</span>
         </div>
-
       </div>`;
 
-    // Toggle open/close on header click
-    panel.querySelector("#twi-settings-header").addEventListener("click", () => {
-      const open = panel.dataset.open === "true";
-      panel.dataset.open = open ? "false" : "true";
-      panel.querySelector(".twi-settings-body").style.display = open ? "none" : "";
-      panel.querySelector("#twi-settings-arrow").textContent = open ? "\u25BA" : "\u25BC";
-    });
-
-    mountSettingsPanel(panel);
-    settingsPanelInjected = true;
+    main.appendChild(panel);
     updateSettingsPanel();
 
-    // Save button
     panel.querySelector("#twi-settings-save").addEventListener("click", async () => {
-      const keyInput = panel.querySelector("#twi-settings-apikey");
+      const keyInput    = panel.querySelector("#twi-settings-apikey");
       const enabledInput = panel.querySelector("#twi-settings-enabled");
-      const savedMsg = panel.querySelector("#twi-settings-saved-msg");
-
+      const savedMsg    = panel.querySelector("#twi-settings-saved-msg");
       const newKey = keyInput.value.trim();
-      const newEnabled = enabledInput.checked;
-
-      if (newKey && newKey !== state.apiKey) {
-        setApiKey(newKey);
-      }
-
+      if (newKey && newKey !== state.apiKey) { setApiKey(newKey); clearSession(); }
       const wasEnabled = state.enabled;
-      setEnabled(newEnabled);
-      updateToggleChecked();
-
-      if (state.enabled && (!wasEnabled || !validSession())) {
-        const ok = await authenticate();
-        if (!ok) {
-          setEnabled(false);
-          updateSettingsPanel();
-          updateToggleChecked();
-          return;
-        }
-        await refreshCalls();
-        scheduleRender(0);
+      setEnabled(enabledInput.checked);
+      // Always attempt auth/reconnect on Save so status updates immediately
+      const ok = await authenticate();
+      if (!ok) {
+        setEnabled(false);
+        updateSettingsPanel();
+        return;
+      }
+      if (state.enabled && !wasEnabled) {
+        // Just enabled — nothing to refresh yet (no war page open)
       } else if (!state.enabled && wasEnabled) {
         state.connected = false;
         state.calls.clear();
         removeAllControls();
-        updateChip();
       }
-
       updateSettingsPanel();
       savedMsg.style.display = "inline";
       setTimeout(() => { savedMsg.style.display = "none"; }, 2500);
     });
 
-    // Forget key button
     panel.querySelector("#twi-settings-forget").addEventListener("click", async () => {
       if (!(await showConfirm("Forget the saved API key and disconnect?"))) return;
       setApiKey("");
@@ -740,22 +690,22 @@
       state.calls.clear();
       removeAllControls();
       updateSettingsPanel();
-      updateToggleChecked();
-      updateChip();
     });
+  }
+
+  function updateToggleChecked() {
+    const cb = document.getElementById("twi-settings-enabled");
+    if (cb) cb.checked = state.enabled;
   }
 
   function updateSettingsPanel() {
     const panel = document.getElementById("twi-settings-details");
     if (!panel) return;
-
-    const keyInput = panel.querySelector("#twi-settings-apikey");
+    const keyInput    = panel.querySelector("#twi-settings-apikey");
     const enabledInput = panel.querySelector("#twi-settings-enabled");
-    const statusLine = panel.querySelector("#twi-settings-status-line");
-
+    const statusLine  = panel.querySelector("#twi-settings-status-line");
     if (keyInput && !keyInput.matches(":focus")) {
-      // Show blurred placeholder if key is set (don't expose it)
-      keyInput.value = state.apiKey ? "" : "";
+      keyInput.value = "";
       keyInput.placeholder = state.apiKey
         ? `API key saved (${state.apiKey.slice(0, 4)}${"*".repeat(12)})`
         : "Paste 16-char API key here...";
@@ -764,84 +714,42 @@
     if (statusLine) {
       if (state.connected) {
         const adminBadge = isAdmin() ? " · ⭐ Admin" : "";
-        statusLine.textContent = `Connected as ${state.player?.name || "unknown"} [${state.player?.id || "?"}]${adminBadge} · Session expires ${state.expiresAt ? new Date(state.expiresAt).toLocaleTimeString() : "N/A"}`;
+        statusLine.textContent = `✓ Connected as ${state.player?.name || "unknown"} [${state.player?.id || "?"}]${adminBadge}`;
         statusLine.style.color = "#4CAF50";
       } else if (state.lastError) {
-        statusLine.textContent = `Disconnected · ${state.lastError}`;
+        statusLine.textContent = `✗ ${state.lastError}`;
         statusLine.style.color = "#e74c3c";
       } else {
-        statusLine.textContent = state.apiKey ? "Not connected yet — tick Enable or Save Settings." : "Enter an API key to get started.";
+        statusLine.textContent = state.apiKey ? "Not connected — click Save & Connect." : "Enter an API key to get started.";
         statusLine.style.color = "#999";
       }
     }
   }
 
-  // ── Status chip ────────────────────────────────────────────────────────────
-
-  function statusChip() {
-    let chip = document.getElementById("twi-faction-calls-status");
-    if (chip) return chip;
-    chip = document.createElement("button");
-    chip.id = "twi-faction-calls-status";
-    chip.type = "button";
-    chip.addEventListener("click", () => {
-      const details = document.getElementById("twi-settings-details");
-      if (details) {
-        const open = details.dataset.open === "true";
-        details.dataset.open = open ? "false" : "true";
-        details.querySelector(".twi-settings-body").style.display = open ? "none" : "";
-        details.querySelector("#twi-settings-arrow").textContent = open ? "\u25BA" : "\u25BC";
-        details.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      }
-    });
-    document.body.appendChild(chip);
-    return chip;
-  }
-
-  function updateChip() {
-    const chip = statusChip();
-    const show = isWarPage() && state.enabled;
-    chip.hidden = !show;
-    if (chip.hidden) return;
-    chip.classList.toggle("connected", state.connected);
-    chip.classList.toggle("disconnected", !state.connected);
-    chip.textContent = state.connected ? "TWI Calls ✓" : "TWI Calls ✗";
-    chip.title = state.connected
-      ? `${state.player?.name || "Member"} — click to open settings`
-      : (state.lastError || "Disconnected") + " — click to open settings";
-  }
-
   function renderAll() {
-    if (!isWarPage()) { updateChip(); return; }
+    if (!isWarPage()) return;
     if (state.enabled) targetRows().forEach(renderRow);
-    updateChip();
     updateToggleChecked();
     updateSettingsPanel();
   }
 
-  // ── Tampermonkey menu (desktop convenience, same as before) ───────────────
+  // ── Tampermonkey menu ─────────────────────────────────────────────────────
 
   if (typeof GM_registerMenuCommand === "function") {
-    GM_registerMenuCommand("TWI Calls: Open Settings Panel", () => {
-      const details = document.getElementById("twi-settings-details");
-      if (details) {
-        details.dataset.open = "true";
-        details.querySelector(".twi-settings-body").style.display = "";
-        details.querySelector("#twi-settings-arrow").textContent = "\u25BC";
-        details.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      }
+    GM_registerMenuCommand("TWI Calls: Open Settings (Torn Preferences)", () => {
+      location.href = "https://www.torn.com/preferences.php";
     });
     GM_registerMenuCommand("TWI Calls: Forget API Key", async () => {
       if (!(await showConfirm("Forget the saved Target Caller API key and session?"))) return;
-      setApiKey(""); state.connected = false; state.calls.clear();
-      updateSettingsPanel(); updateToggleChecked(); updateChip(); removeAllControls();
+      setApiKey(""); clearSession(); state.connected = false; state.calls.clear();
+      updateSettingsPanel(); updateToggleChecked(); removeAllControls();
     });
   }
 
   // ── Styles ─────────────────────────────────────────────────────────────────
 
   GM_addStyle(`
-    /* ── Toggle checkbox — identical style to TWSE Sort ── */
+    /* ── Toggle checkbox ── */
     .twi-sort-toggle-container{
       position:absolute;left:10px;display:inline-flex;align-items:center
     }
@@ -851,43 +759,33 @@
     }
     .twi-sort-toggle-checkbox{cursor:pointer;margin:0;width:13px;height:13px}
 
-    /* ── Settings sidebar panel ── */
-    .twi-settings-details { margin: 4px 0 0; }
-    #twi-settings-header {
-      cursor: pointer; user-select: none;
-      font-size: 13px; font-weight: 700;
-      display: flex; align-items: center; gap: 6px;
-      padding: 8px 10px;
-      background: #2a2a2a;
-      border-top: 1px solid #3a3a3a;
+    /* ── Preferences page card ── */
+    .twi-prefs-card {
+      background: #1e1e1e; border: 1px solid #3a3a3a; border-radius: 8px;
+      padding: 20px 24px 24px; margin: 20px 0; max-width: 680px;
     }
-    #twi-settings-header:hover { background: #333; }
-    #twi-settings-arrow { font-size: 10px; color: #888; }
-    .twi-settings-body { padding: 10px 12px 14px; background: #1e1e1e; border-top: 1px solid #3a3a3a; }
-    .twi-settings-row{margin-bottom:14px}
-    .twi-settings-row-inline{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+    .twi-prefs-title {
+      font-size: 16px; font-weight: 700; color: #f0f0f0;
+      margin-bottom: 18px; padding-bottom: 10px;
+      border-bottom: 1px solid #3a3a3a;
+    }
+    .twi-settings-row { margin-bottom: 14px; }
+    .twi-settings-row label { font-size: 13px; color: #ccc; display: block; margin-bottom: 6px; }
+    .twi-settings-row-inline { display:flex;align-items:center;gap:8px;margin-bottom:14px; }
     .twi-settings-row-inline input[type=checkbox]{
       width:16px;height:16px;cursor:pointer;flex-shrink:0
     }
-    .twi-settings-row-inline label{cursor:pointer;font-size:13px}
+    .twi-settings-row-inline label{cursor:pointer;font-size:13px;color:#ccc;margin-bottom:0}
     .twi-settings-input{
       display:block;width:100%;max-width:340px;
-      padding:8px 10px;margin-top:6px;
-      border:1px solid #555;border-radius:6px;
-      background:#1a1a1a;color:#fff;
-      font-size:14px;font-family:monospace;
+      padding:8px 10px;border:1px solid #555;border-radius:6px;
+      background:#1a1a1a;color:#fff;font-size:14px;font-family:monospace;
       box-sizing:border-box
     }
     .twi-settings-input:focus{outline:none;border-color:#4a9eff}
-    .twi-settings-hint{
-      margin:6px 0 0;font-size:12px;color:#888;line-height:1.5
-    }
-    .twi-settings-status{
-      margin:8px 0 12px;font-size:12px;min-height:16px
-    }
-    .twi-settings-actions{
-      display:flex;flex-wrap:wrap;align-items:center;gap:10px
-    }
+    .twi-settings-hint{margin:6px 0 0;font-size:12px;color:#888;line-height:1.5}
+    .twi-settings-status{margin:10px 0 14px;font-size:13px;min-height:18px;font-weight:500}
+    .twi-settings-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:4px}
     .twi-btn-save{background:#2f9e44!important;color:#fff!important}
     .twi-btn-save:hover{background:#37b24d!important}
     .twi-btn-secondary{background:#555!important;color:#ddd!important}
@@ -935,17 +833,6 @@
     .twi-call-admin{background:#8b0000!important;border-color:rgba(255,80,80,.35)!important;color:#fff!important;cursor:pointer!important}
     .twi-call-admin .twi-state-dot{background:#ff4444!important}
     .twi-call-admin.twi-call-readonly{cursor:pointer!important}
-
-    /* ── Status chip ── */
-    #twi-faction-calls-status{
-      position:fixed;right:12px;bottom:62px;z-index:10000;
-      border:1px solid rgba(0,0,0,.3);border-radius:14px;padding:8px 12px;
-      color:#fff;font-size:12px;font-weight:700;
-      box-shadow:0 2px 8px rgba(0,0,0,.25);cursor:pointer;
-      touch-action:manipulation;min-width:44px;min-height:44px
-    }
-    #twi-faction-calls-status.connected{background:#2f9e44}
-    #twi-faction-calls-status.disconnected{background:#c92a2a}
 
     /* ── Alert / Confirm modals ── */
     .twi-modal-overlay{
@@ -1050,11 +937,6 @@
       .twi-sort-toggle-checkbox{width:20px!important;height:20px!important}
       .twi-sort-toggle-label{font-size:15px!important;gap:8px!important}
       .twi-settings-input{font-size:16px!important}
-      #twi-faction-calls-status{
-        right:10px!important;bottom:70px!important;
-        padding:10px 14px!important;font-size:13px!important;
-        min-width:48px!important;min-height:48px!important
-      }
     }
 
     /* ── Tablet + Desktop (≥901px): button absolutely below name banner ── */
@@ -1082,7 +964,6 @@
       .twi-call-actions{gap:2px!important}
       .twi-flag{width:18px!important;min-width:18px!important;height:18px!important;border-radius:3px!important}
       .twi-flag-icon{width:11px!important;height:11px!important}
-      #twi-faction-calls-status{padding:10px 16px!important;font-size:13px!important}
     }
   `);
 
@@ -1103,11 +984,10 @@
       for (const node of [...mutation.addedNodes, ...mutation.removedNodes]) {
         if (!(node instanceof Element)) continue;
         if (node.id === "twi-calls-toggle-container" ||
-            node.id === "twi-settings-details" ||
-            node.classList?.contains("twi-call-control") ||
-            node.classList?.contains("twi-modal-overlay") ||
-            node.id === "twi-faction-calls-status" ||
-            node.closest?.(".twi-call-control, .twi-modal-overlay")) continue;
+                node.id === "twi-settings-details" ||
+                node.classList?.contains("twi-call-control") ||
+                node.classList?.contains("twi-modal-overlay") ||
+                node.closest?.(".twi-call-control, .twi-modal-overlay")) continue;
         if (node.matches?.("li.enemy, ul.members-list, .faction-war") ||
             node.querySelector?.("li.enemy, ul.members-list, .faction-war")) return true;
       }
@@ -1129,10 +1009,9 @@
     warObserver.observe(container, { childList: true, subtree: true });
   }
 
-  // Called on every DOM mutation and hash change — mounts or hides the panel
-  // and cleans up CALL controls whenever the war tab is no longer active.
+  // Clean up CALL controls whenever the war tab is no longer active.
   function ensureUI() {
-    injectSettingsPanel();
+    if (isSettingsPage()) { injectSettingsPage(); return; }
     if (!isWarPage()) removeAllControls();
   }
 
@@ -1191,12 +1070,8 @@
     if (isWarPage()) {
       attachWarObserver();
       if (state.enabled) { await authenticate(); }
-      // Honour the rate limit on tab switch too — avoids a burst if the user
-      // rapidly switches back and forth between war and other faction tabs.
       throttledRefresh();
       scheduleRender(0);
-    } else {
-      updateChip();
     }
   });
 
@@ -1210,5 +1085,3 @@
   })();
 
 })();
-
-// Made with Bob

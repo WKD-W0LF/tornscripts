@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Faction_Calls (Universal)
 // @namespace    twilight-reborn
-// @version      2.1.0
+// @version      2.1.2
 // @author       Leandria & Wolf (Universal: Bob)
 // @description  Shared target calls, priorities and assist requests for Twilight - Reborn [56966]. Settings on Torn preferences page. Optimized for all devices.
 // @license      MIT
@@ -17,6 +17,19 @@
 // @downloadURL  https://raw.githubusercontent.com/WKD-W0LF/tornscripts/main/TWI_Faction_Calls_Universal.user.js
 // @updateURL    https://raw.githubusercontent.com/WKD-W0LF/tornscripts/main/TWI_Faction_Calls_Universal.user.js
 // ==/UserScript==
+
+// ── Changelog ────────────────────────────────────────────────────────────────
+// v2.1.1 (2026-07-20) — updated by Claude Sonnet
+//   - Cross-platform hardening pass (Apple/Android mobile+tablet, Safari/
+//     Chrome/Firefox desktop):
+//   - Replaced CSS `inset:0` on the API-key modal with explicit
+//     top/right/bottom/left — `inset` shorthand isn't supported before
+//     Safari 14.1, so older iOS/macOS Safari would mis-position the modal.
+//   - Added lsGet/lsSet/lsRemove helpers; every localStorage read/write now
+//     wrapped in try/catch so storage failures (Safari private-mode edge
+//     cases, storage-restricted embedded webviews) can't throw and break
+//     the script.
+// ──────────────────────────────────────────────────────────────────────────────
 
 (function () {
   "use strict";
@@ -41,12 +54,19 @@
   const COUNTDOWN_MS = 1000;
   const PREFIX = "twi-faction-calls-";
 
+  // localStorage can throw (Safari private-mode quota edge cases, storage
+  // disabled in some embedded webviews) — never let a storage write crash
+  // the script on any platform.
+  function lsGet(key) { try { return localStorage.getItem(key); } catch { return null; } }
+  function lsSet(key, value) { try { localStorage.setItem(key, value); } catch {} }
+  function lsRemove(key) { try { localStorage.removeItem(key); } catch {} }
+
   const state = {
-    apiKey: localStorage.getItem(`${PREFIX}api-key`) || "",
-    token: localStorage.getItem(`${PREFIX}session-token`) || "",
-    expiresAt: localStorage.getItem(`${PREFIX}session-expires`) || "",
+    apiKey: lsGet(`${PREFIX}api-key`) || "",
+    token: lsGet(`${PREFIX}session-token`) || "",
+    expiresAt: lsGet(`${PREFIX}session-expires`) || "",
     player: readJson(`${PREFIX}player`),
-    enabled: localStorage.getItem(`${PREFIX}enabled`) !== "false",
+    enabled: lsGet(`${PREFIX}enabled`) !== "false",
     calls: new Map(),
     authenticating: null,
     polling: false,
@@ -55,20 +75,20 @@
   };
 
   function readJson(key) {
-    try { return JSON.parse(localStorage.getItem(key) || "null"); }
+    try { return JSON.parse(lsGet(key) || "null"); }
     catch { return null; }
   }
 
   function setEnabled(value) {
     state.enabled = value;
-    localStorage.setItem(`${PREFIX}enabled`, value ? "true" : "false");
+    lsSet(`${PREFIX}enabled`, value ? "true" : "false");
   }
 
   function setApiKey(value) {
     state.apiKey = String(value || "").trim();
     state.apiKey
-      ? localStorage.setItem(`${PREFIX}api-key`, state.apiKey)
-      : localStorage.removeItem(`${PREFIX}api-key`);
+      ? lsSet(`${PREFIX}api-key`, state.apiKey)
+      : lsRemove(`${PREFIX}api-key`);
     clearSession();
   }
 
@@ -76,18 +96,18 @@
     state.token = data.sessionToken;
     state.expiresAt = data.expiresAt;
     state.player = data.player;
-    localStorage.setItem(`${PREFIX}session-token`, state.token);
-    localStorage.setItem(`${PREFIX}session-expires`, state.expiresAt);
-    localStorage.setItem(`${PREFIX}player`, JSON.stringify(state.player));
+    lsSet(`${PREFIX}session-token`, state.token);
+    lsSet(`${PREFIX}session-expires`, state.expiresAt);
+    lsSet(`${PREFIX}player`, JSON.stringify(state.player));
   }
 
   function clearSession() {
     state.token = "";
     state.expiresAt = "";
     state.player = null;
-    localStorage.removeItem(`${PREFIX}session-token`);
-    localStorage.removeItem(`${PREFIX}session-expires`);
-    localStorage.removeItem(`${PREFIX}player`);
+    lsRemove(`${PREFIX}session-token`);
+    lsRemove(`${PREFIX}session-expires`);
+    lsRemove(`${PREFIX}player`);
   }
 
   function isWarPage() {
@@ -606,21 +626,6 @@
   function injectSettingsPage() {
     if (document.getElementById("twi-settings-details")) return;
 
-    // Insert nav item
-    const nav = document.querySelector(".settings-columns-wrap .settings-nav-wrap ul, .settings-menu ul, ul.settings-list");
-    if (nav) {
-      const li = document.createElement("li");
-      li.innerHTML = `<a href="#twi-faction-calls" class="t-blue-cont-wrap">TWI Faction Calls</a>`;
-      li.querySelector("a").addEventListener("click", e => {
-        e.preventDefault();
-        document.getElementById("twi-settings-details")?.scrollIntoView({ behavior: "smooth" });
-      });
-      nav.appendChild(li);
-    }
-
-    const main = document.querySelector(".content-wrapper, #mainContainer, .settings-columns-wrap .settings-content-wrap, main");
-    if (!main) return;
-
     const panel = document.createElement("div");
     panel.id = "twi-settings-details";
     panel.innerHTML = `
@@ -652,7 +657,7 @@
         </div>
       </div>`;
 
-    main.appendChild(panel);
+    document.body.appendChild(panel);
     updateSettingsPanel();
 
     panel.querySelector("#twi-settings-save").addEventListener("click", async () => {
@@ -759,27 +764,34 @@
     }
     .twi-sort-toggle-checkbox{cursor:pointer;margin:0;width:13px;height:13px}
 
-    /* ── Preferences page card ── */
+    /* ── Preferences page section (body-appended, works on all layouts) ── */
+    #twi-settings-details {
+      display: block !important;
+      width: 100%; box-sizing: border-box;
+      padding: 12px 16px 20px;
+      background: #181818;
+      border-top: 3px solid #3a3a3a;
+      margin-top: 8px;
+    }
     .twi-prefs-card {
       background: #1e1e1e; border: 1px solid #3a3a3a; border-radius: 8px;
-      padding: 20px 24px 24px; margin: 20px 0; max-width: 680px;
+      padding: 16px 16px 20px; margin: 0 auto;
+      width: 100%; max-width: 680px; box-sizing: border-box;
     }
     .twi-prefs-title {
-      font-size: 16px; font-weight: 700; color: #f0f0f0;
-      margin-bottom: 18px; padding-bottom: 10px;
+      font-size: 15px; font-weight: 700; color: #f0f0f0;
+      margin-bottom: 16px; padding-bottom: 10px;
       border-bottom: 1px solid #3a3a3a;
     }
-    .twi-settings-row { margin-bottom: 14px; }
-    .twi-settings-row label { font-size: 13px; color: #ccc; display: block; margin-bottom: 6px; }
-    .twi-settings-row-inline { display:flex;align-items:center;gap:8px;margin-bottom:14px; }
-    .twi-settings-row-inline input[type=checkbox]{
-      width:16px;height:16px;cursor:pointer;flex-shrink:0
-    }
+    .twi-settings-row{margin-bottom:14px}
+    .twi-settings-row label{font-size:13px;color:#ccc;display:block;margin-bottom:6px}
+    .twi-settings-row-inline{display:flex;align-items:center;gap:8px;margin-bottom:14px}
+    .twi-settings-row-inline input[type=checkbox]{width:16px;height:16px;cursor:pointer;flex-shrink:0}
     .twi-settings-row-inline label{cursor:pointer;font-size:13px;color:#ccc;margin-bottom:0}
     .twi-settings-input{
-      display:block;width:100%;max-width:340px;
-      padding:8px 10px;border:1px solid #555;border-radius:6px;
-      background:#1a1a1a;color:#fff;font-size:14px;font-family:monospace;
+      display:block;width:100%;max-width:100%;
+      padding:10px 12px;border:1px solid #555;border-radius:6px;
+      background:#1a1a1a;color:#fff;font-size:16px;font-family:monospace;
       box-sizing:border-box
     }
     .twi-settings-input:focus{outline:none;border-color:#4a9eff}
@@ -871,7 +883,7 @@
 
     /* ── API key prompt modal ── */
     #twi-api-key-modal{
-      position:fixed;inset:0;z-index:2147483647;
+      position:fixed;top:0;right:0;bottom:0;left:0;z-index:2147483647;
       display:flex;align-items:center;justify-content:center;
       padding:16px;background:rgba(0,0,0,.72);box-sizing:border-box
     }
@@ -1074,6 +1086,10 @@
       scheduleRender(0);
     }
   });
+
+  // Reflect connected state immediately if a valid session is already stored —
+  // so the settings panel shows the correct status without waiting for a fresh auth.
+  if (validSession()) state.connected = true;
 
   (async () => {
     ensureUI();

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.3.0
+// @version      1.3.3
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Settings on Torn preferences page. Banner visible on all Torn pages.
 // @license      MIT
@@ -16,6 +16,20 @@
 // @updateURL    https://raw.githubusercontent.com/WKD-W0LF/tornscripts/main/TWI_Chain_Alert.user.js
 // ==/UserScript==
 
+// ── Changelog ────────────────────────────────────────────────────────────────
+// v1.3.2 (2026-07-20) — updated by Claude Sonnet
+//   - Cross-platform hardening pass (Apple/Android mobile+tablet, Safari/
+//     Chrome/Firefox desktop):
+//   - Added lsGet/lsSet/lsRemove helpers; every localStorage read/write now
+//     wrapped in try/catch so storage failures (Safari private-mode edge
+//     cases, storage-restricted embedded webviews) can't throw and break
+//     the script.
+//   - Banner now adds `env(safe-area-inset-top)` padding so it clears the
+//     notch/status bar when Torn is opened as an iOS home-screen web app.
+//   - ensureBannerEl() now falls back to document.documentElement if
+//     document.body isn't available yet.
+// ──────────────────────────────────────────────────────────────────────────────
+
 (function () {
   "use strict";
 
@@ -29,34 +43,40 @@
   const PREFIX          = "twi-chain-alert-";
   const CACHE_KEY       = `${PREFIX}chain-cache`;
 
+  // ── localStorage helpers ───────────────────────────────────────────────────
+  // localStorage can throw (Safari private-mode quota edge cases, storage
+  // disabled in some embedded webviews) — never let a storage write crash
+  // the script on any platform.
+  function lsGet(key) { try { return localStorage.getItem(key); } catch { return null; } }
+  function lsSet(key, value) { try { localStorage.setItem(key, value); } catch {} }
+  function lsRemove(key) { try { localStorage.removeItem(key); } catch {} }
+
   // ── State ──────────────────────────────────────────────────────────────────
 
   const state = {
-    apiKey:          localStorage.getItem(`${PREFIX}api-key`) || "",
-    sessionToken:    localStorage.getItem(`${PREFIX}session`) || "",
-    sessionExpires:  localStorage.getItem(`${PREFIX}session-expires`) || "",
-    enabled:         localStorage.getItem(`${PREFIX}enabled`) !== "false",
+    apiKey:          lsGet(`${PREFIX}api-key`) || "",
+    sessionToken:    lsGet(`${PREFIX}session`) || "",
+    sessionExpires:  lsGet(`${PREFIX}session-expires`) || "",
+    enabled:         lsGet(`${PREFIX}enabled`) !== "false",
     chainCount:      null,
     alertedFor:      null,
     lastError:       "",
-    playerId:        localStorage.getItem(`${PREFIX}player-id`) || "",
-    playerName:      localStorage.getItem(`${PREFIX}player-name`) || "",
+    playerId:        lsGet(`${PREFIX}player-id`) || "",
+    playerName:      lsGet(`${PREFIX}player-name`) || "",
     assignments:     new Map(),
     lastAssignFetch: 0
   };
 
-  // ── localStorage helpers ───────────────────────────────────────────────────
-
   function setApiKey(value) {
     state.apiKey = String(value || "").trim();
     state.apiKey
-      ? localStorage.setItem(`${PREFIX}api-key`, state.apiKey)
-      : localStorage.removeItem(`${PREFIX}api-key`);
+      ? lsSet(`${PREFIX}api-key`, state.apiKey)
+      : lsRemove(`${PREFIX}api-key`);
   }
 
   function setEnabled(value) {
     state.enabled = value;
-    localStorage.setItem(`${PREFIX}enabled`, value ? "true" : "false");
+    lsSet(`${PREFIX}enabled`, value ? "true" : "false");
   }
 
   function validSession() {
@@ -73,17 +93,17 @@
     state.playerId       = String(playerId || "");
     state.playerName     = String(playerName || "");
     token
-      ? localStorage.setItem(`${PREFIX}session`, token)
-      : localStorage.removeItem(`${PREFIX}session`);
+      ? lsSet(`${PREFIX}session`, token)
+      : lsRemove(`${PREFIX}session`);
     expiresAt
-      ? localStorage.setItem(`${PREFIX}session-expires`, expiresAt)
-      : localStorage.removeItem(`${PREFIX}session-expires`);
+      ? lsSet(`${PREFIX}session-expires`, expiresAt)
+      : lsRemove(`${PREFIX}session-expires`);
     state.playerId
-      ? localStorage.setItem(`${PREFIX}player-id`, state.playerId)
-      : localStorage.removeItem(`${PREFIX}player-id`);
+      ? lsSet(`${PREFIX}player-id`, state.playerId)
+      : lsRemove(`${PREFIX}player-id`);
     state.playerName
-      ? localStorage.setItem(`${PREFIX}player-name`, state.playerName)
-      : localStorage.removeItem(`${PREFIX}player-name`);
+      ? lsSet(`${PREFIX}player-name`, state.playerName)
+      : lsRemove(`${PREFIX}player-name`);
   }
 
   function isAdmin() { return ADMIN_IDS.has(state.playerId); }
@@ -216,7 +236,7 @@
     if (document.getElementById("twi-alert-banner")) return;
     const banner = document.createElement("div");
     banner.id = "twi-alert-banner";
-    document.body.appendChild(banner);
+    (document.body || document.documentElement).appendChild(banner);
   }
 
   function showBanner(bonusNumber, level, assignedName) {
@@ -295,16 +315,16 @@
   function writeCacheFromDOM() {
     const count = readChainFromDOM();
     if (count !== null) {
-      localStorage.setItem(CACHE_KEY, JSON.stringify({ count, ts: Date.now() }));
+      lsSet(CACHE_KEY, JSON.stringify({ count, ts: Date.now() }));
     } else {
-      localStorage.removeItem(CACHE_KEY);
+      lsRemove(CACHE_KEY);
     }
     return count;
   }
 
   function readChainFromCache() {
     try {
-      const raw = localStorage.getItem(CACHE_KEY);
+      const raw = lsGet(CACHE_KEY);
       if (!raw) return null;
       const { count, ts } = JSON.parse(raw);
       if (Date.now() - ts > CHAIN_CACHE_TTL) return null;
@@ -444,22 +464,6 @@
   function injectSettingsPage() {
     if (document.getElementById("twi-alert-settings")) return;
 
-    // Insert nav item in the left settings column
-    const nav = document.querySelector(".settings-columns-wrap .settings-nav-wrap ul, .settings-menu ul, ul.settings-list");
-    if (nav) {
-      const li = document.createElement("li");
-      li.innerHTML = `<a href="#twi-chain-alert" class="t-blue-cont-wrap">TWI Chain Alert</a>`;
-      li.querySelector("a").addEventListener("click", e => {
-        e.preventDefault();
-        document.getElementById("twi-alert-settings")?.scrollIntoView({ behavior: "smooth" });
-      });
-      nav.appendChild(li);
-    }
-
-    // Find the main content area
-    const main = document.querySelector(".content-wrapper, #mainContainer, .settings-columns-wrap .settings-content-wrap, main");
-    if (!main) return;
-
     const panel = document.createElement("div");
     panel.id = "twi-alert-settings";
     panel.innerHTML = `
@@ -495,7 +499,7 @@
         </div>
       </div>`;
 
-    main.appendChild(panel);
+    document.body.appendChild(panel);
     updateSettingsPanel();
     renderAssignmentTable();
 
@@ -624,6 +628,10 @@
       padding: 10px 16px; font-size: 15px; font-weight: 700;
       line-height: 1.3; text-align: center;
       box-shadow: 0 2px 8px rgba(0,0,0,0.5); box-sizing: border-box;
+      /* iPhone notch/status-bar clearance when Torn is opened as a standalone
+         home-screen web app; ignored (falls back to 10px) on browsers/engines
+         without env() support. */
+      padding-top: calc(10px + env(safe-area-inset-top, 0px));
     }
     #twi-alert-banner.twi-alert-warn {
       display: block; background: #f6c344; color: #3d2f00;
@@ -645,14 +653,23 @@
     }
     @keyframes twi-pulse { 0%,100% { opacity:1; } 50% { opacity:0.75; } }
 
-    /* ── Preferences page card ── */
+    /* ── Preferences page section (body-appended, works on all layouts) ── */
+    #twi-alert-settings {
+      display: block !important;
+      width: 100%; box-sizing: border-box;
+      padding: 12px 16px 20px;
+      background: #181818;
+      border-top: 3px solid #3a3a3a;
+      margin-top: 8px;
+    }
     .twi-prefs-card {
       background: #1e1e1e; border: 1px solid #3a3a3a; border-radius: 8px;
-      padding: 20px 24px 24px; margin: 20px 0; max-width: 680px;
+      padding: 16px 16px 20px; margin: 0 auto;
+      width: 100%; max-width: 680px; box-sizing: border-box;
     }
     .twi-prefs-title {
-      font-size: 16px; font-weight: 700; color: #f0f0f0;
-      margin-bottom: 18px; padding-bottom: 10px;
+      font-size: 15px; font-weight: 700; color: #f0f0f0;
+      margin-bottom: 16px; padding-bottom: 10px;
       border-bottom: 1px solid #3a3a3a;
     }
     .twi-settings-row     { margin-bottom: 14px; }
@@ -661,9 +678,9 @@
     .twi-settings-row-inline input[type=checkbox] { width: 16px; height: 16px; cursor: pointer; flex-shrink: 0; }
     .twi-settings-row-inline label { cursor: pointer; font-size: 13px; color: #ccc; margin-bottom: 0; }
     .twi-settings-input {
-      display: block; width: 100%; max-width: 340px;
-      padding: 8px 10px; border: 1px solid #555; border-radius: 6px;
-      background: #1a1a1a; color: #fff; font-size: 14px;
+      display: block; width: 100%; max-width: 100%;
+      padding: 10px 12px; border: 1px solid #555; border-radius: 6px;
+      background: #1a1a1a; color: #fff; font-size: 16px;
       font-family: monospace; box-sizing: border-box;
     }
     .twi-settings-input:focus { outline: none; border-color: #4a9eff; }

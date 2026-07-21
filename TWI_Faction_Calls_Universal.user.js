@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Faction_Calls (Universal)
 // @namespace    twilight-reborn
-// @version      2.1.6
+// @version      2.1.7
 // @author       Leandria & Wolf (Universal: Bob)
 // @description  Shared target calls, priorities and assist requests for Twilight - Reborn [56966]. Settings on Torn preferences page. Optimized for all devices.
 // @license      MIT
@@ -619,16 +619,15 @@
     if (seconds <= 0) state.calls.delete(row.id);
   }
 
-  // ── Settings page injection (preferences.php only) ─────────────────────────
+  // ── Settings page injection ────────────────────────────────────────────────
 
   function isSettingsPage() { return location.pathname.includes("/preferences.php"); }
 
-  function injectSettingsPage() {
-    if (document.getElementById("twi-settings-details")) return;
+  const IS_IPHONE = /iPhone/i.test(navigator.userAgent);
 
-    const panel = document.createElement("div");
-    panel.id = "twi-settings-details";
-    panel.innerHTML = `
+  // Build the settings panel HTML (shared between inline and modal)
+  function buildSettingsPanelHTML() {
+    return `
       <div class="twi-prefs-card">
         <button type="button" class="twi-prefs-header" aria-expanded="false">
           <span class="twi-prefs-arrow" aria-hidden="true">&#9658;</span>
@@ -658,37 +657,27 @@
           <div class="twi-settings-actions">
             <button type="button" id="twi-settings-save" class="torn-btn twi-btn-save">Save &amp; Connect</button>
             <button type="button" id="twi-settings-forget" class="torn-btn twi-btn-secondary">Forget API Key</button>
-            <span id="twi-settings-saved-msg" style="display:none;color:#4CAF50;font-weight:bold;margin-left:10px;">✓ Saved!</span>
+            <span id="twi-settings-saved-msg" style="display:none;color:#4CAF50;font-weight:bold;margin-left:10px;">&#10003; Saved!</span>
           </div>
 
         </div>
       </div>`;
+  }
 
-    panel.querySelector(".twi-prefs-header").addEventListener("click", () => {
-      const body   = panel.querySelector(".twi-prefs-body");
-      const arrow  = panel.querySelector(".twi-prefs-arrow");
-      const header = panel.querySelector(".twi-prefs-header");
-      const open   = !body.hidden;
-      body.hidden  = open;
-      arrow.innerHTML = open ? "&#9658;" : "&#9660;";
-      header.setAttribute("aria-expanded", String(!open));
-    });
-
-    const reactRoot = document.getElementById("react-root") ||
-                      document.getElementById("root") ||
-                      document.getElementById("app");
-    if (reactRoot) {
-      reactRoot.insertAdjacentElement("afterend", panel);
-    } else if (/iPhone/i.test(navigator.userAgent)) {
-      const updateBtn = Array.from(document.querySelectorAll("button, input[type=submit]"))
-        .find(el => /update\s+settings/i.test(el.textContent || el.value || ""));
-      if (!updateBtn) return;  // not rendered yet — interval will retry
-      const anchor = updateBtn.closest("div, section, form") || updateBtn.parentElement;
-      anchor.insertAdjacentElement("afterend", panel);
-    } else {
-      document.body.appendChild(panel);
+  // Wire accordion + save/forget events onto a panel container element
+  function wireSettingsPanel(panel) {
+    // Accordion only present on the desktop inline panel, not the mobile modal
+    const accordionHeader = panel.querySelector(".twi-prefs-header");
+    if (accordionHeader) {
+      accordionHeader.addEventListener("click", () => {
+        const body   = panel.querySelector(".twi-prefs-body");
+        const arrow  = panel.querySelector(".twi-prefs-arrow");
+        const open   = !body.hidden;
+        body.hidden  = open;
+        arrow.innerHTML = open ? "&#9658;" : "&#9660;";
+        accordionHeader.setAttribute("aria-expanded", String(!open));
+      });
     }
-    updateSettingsPanel();
 
     panel.querySelector("#twi-settings-save").addEventListener("click", async () => {
       const keyInput    = panel.querySelector("#twi-settings-apikey");
@@ -728,18 +717,115 @@
     });
   }
 
+  // ── iPhone: floating gear FAB + bottom-sheet modal ─────────────────────────
+  // On TornPDA iPhone, preferences.php is not reliably injectable — WKWebView
+  // clips body content. Instead inject a fixed ⚙ FAB on every page.
+
+  function injectMobileSettingsFAB() {
+    if (document.getElementById("twi-fc-fab")) return;
+
+    const fab = document.createElement("button");
+    fab.id = "twi-fc-fab";
+    fab.type = "button";
+    fab.setAttribute("aria-label", "TWI Faction Calls Settings");
+    fab.textContent = "📞";
+
+    const backdrop = document.createElement("div");
+    backdrop.id = "twi-fc-modal-backdrop";
+
+    const modal = document.createElement("div");
+    modal.id = "twi-fc-modal";
+    modal.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;
+                  padding:12px 16px;background:#2a2a2a;border-radius:8px 8px 0 0;
+                  border-bottom:1px solid #3a3a3a;">
+        <span style="font-size:15px;font-weight:700;color:#f0f0f0;">TWI Faction Calls Settings</span>
+        <button type="button" id="twi-fc-modal-close"
+          style="background:none;border:none;color:#aaa;font-size:22px;
+                 cursor:pointer;padding:0 4px;line-height:1;">&#x2715;</button>
+      </div>
+      <div style="padding:16px;overflow-y:auto;flex:1;-webkit-overflow-scrolling:touch;">
+
+        <div class="twi-settings-row">
+          <label for="twi-settings-apikey"><strong>Torn API Key</strong></label>
+          <input type="text" id="twi-settings-apikey" class="twi-settings-input"
+            maxlength="16" placeholder="Paste 16-char API key here..."
+            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+          <p class="twi-settings-hint">
+            Provide your 16-character public API key named <em>Target Caller</em>.
+            Used only to confirm membership of Twilight&nbsp;&ndash;&nbsp;Reborn [56966].
+          </p>
+        </div>
+
+        <div class="twi-settings-row twi-settings-row-inline">
+          <input type="checkbox" id="twi-settings-enabled" />
+          <label for="twi-settings-enabled">Enable TWI Faction Calls on the War Page</label>
+        </div>
+
+        <div class="twi-settings-status" id="twi-settings-status-line"></div>
+
+        <div class="twi-settings-actions">
+          <button type="button" id="twi-settings-save" class="torn-btn twi-btn-save">Save &amp; Connect</button>
+          <button type="button" id="twi-settings-forget" class="torn-btn twi-btn-secondary">Forget API Key</button>
+          <span id="twi-settings-saved-msg" style="display:none;color:#4CAF50;font-weight:bold;margin-left:10px;">&#10003; Saved!</span>
+        </div>
+
+      </div>`;
+
+    backdrop.appendChild(modal);
+    document.documentElement.appendChild(fab);
+    document.documentElement.appendChild(backdrop);
+
+    fab.addEventListener("click", () => {
+      backdrop.style.display = "flex";
+      updateSettingsPanel();
+    });
+    modal.querySelector("#twi-fc-modal-close").addEventListener("click", () => {
+      backdrop.style.display = "none";
+    });
+    backdrop.addEventListener("click", (e) => {
+      if (e.target === backdrop) backdrop.style.display = "none";
+    });
+
+    wireSettingsPanel(modal);
+    updateSettingsPanel();
+  }
+
+  // ── Settings page injection (preferences.php, desktop/tablet only) ──────────
+
+  function injectSettingsPage() {
+    if (document.getElementById("twi-settings-details")) return;
+
+    const panel = document.createElement("div");
+    panel.id = "twi-settings-details";
+    panel.innerHTML = buildSettingsPanelHTML();
+
+    const reactRoot = document.getElementById("react-root") ||
+                      document.getElementById("root") ||
+                      document.getElementById("app");
+    if (reactRoot) {
+      reactRoot.insertAdjacentElement("afterend", panel);
+    } else {
+      document.body.appendChild(panel);
+    }
+    wireSettingsPanel(panel);
+    updateSettingsPanel();
+  }
+
   function updateToggleChecked() {
     const cb = document.getElementById("twi-settings-enabled");
     if (cb) cb.checked = state.enabled;
   }
 
   function updateSettingsPanel() {
-    const panel = document.getElementById("twi-settings-details");
+    // Works for both the inline panel (desktop) and the modal panel (iPhone)
+    const panel = document.getElementById("twi-settings-details") ||
+                  document.getElementById("twi-fc-modal");
     if (!panel) return;
     const keyInput    = panel.querySelector("#twi-settings-apikey");
     const enabledInput = panel.querySelector("#twi-settings-enabled");
     const statusLine  = panel.querySelector("#twi-settings-status-line");
-    const badge       = panel.querySelector("#twi-fc-badge");
+    const badge       = document.getElementById("twi-fc-badge");
     if (keyInput && !keyInput.matches(":focus")) {
       keyInput.value = "";
       keyInput.placeholder = state.apiKey
@@ -1030,6 +1116,49 @@
       .twi-flag{width:18px!important;min-width:18px!important;height:18px!important;border-radius:3px!important}
       .twi-flag-icon{width:11px!important;height:11px!important}
     }
+
+    /* ── iPhone FAB + modal ── */
+    #twi-fc-fab {
+      display: none;
+    }
+    @media (max-width: 600px) {
+      #twi-fc-fab {
+        display: flex; align-items: center; justify-content: center;
+        position: fixed;
+        bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+        right: 70px;
+        z-index: 99998;
+        width: 48px; height: 48px;
+        border-radius: 50%;
+        background: #2a2a2a;
+        border: 2px solid #ef8c34;
+        color: #f0f0f0;
+        font-size: 20px;
+        cursor: pointer;
+        touch-action: manipulation;
+        -webkit-user-select: none; user-select: none;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.6);
+      }
+    }
+    #twi-fc-modal-backdrop {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      z-index: 100000;
+      background: rgba(0,0,0,0.7);
+      align-items: flex-end;
+      justify-content: center;
+      -webkit-overflow-scrolling: touch;
+    }
+    #twi-fc-modal {
+      display: flex; flex-direction: column;
+      width: 100%; max-width: 520px;
+      max-height: 85vh;
+      background: #181818;
+      border-radius: 8px 8px 0 0;
+      overflow: hidden;
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
   `);
 
   // ── Observers & polling ────────────────────────────────────────────────────
@@ -1076,7 +1205,12 @@
 
   // Clean up CALL controls whenever the war tab is no longer active.
   function ensureUI() {
-    if (isSettingsPage()) { injectSettingsPage(); return; }
+    if (IS_IPHONE) {
+      injectMobileSettingsFAB();
+    } else if (isSettingsPage()) {
+      injectSettingsPage();
+      return;
+    }
     if (!isWarPage()) removeAllControls();
   }
 

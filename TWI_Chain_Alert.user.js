@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.3.7
+// @version      1.3.8
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Settings on Torn preferences page. Banner visible on all Torn pages.
 // @license      MIT
@@ -459,14 +459,10 @@
     fetchFactionMembers(() => inputEl.focus());
   }
 
-  // ── Settings page injection (preferences.php only) ─────────────────────────
+  // ── Settings panel HTML builder (shared by inline + modal) ─────────────────
 
-  function injectSettingsPage() {
-    if (document.getElementById("twi-alert-settings")) return;
-
-    const panel = document.createElement("div");
-    panel.id = "twi-alert-settings";
-    panel.innerHTML = `
+  function buildSettingsPanelHTML() {
+    return `
       <div class="twi-prefs-card">
         <button type="button" class="twi-prefs-header" aria-expanded="false">
           <span class="twi-prefs-arrow" aria-hidden="true">&#9658;</span>
@@ -505,41 +501,23 @@
 
         </div>
       </div>`;
+  }
 
-    // Toggle open/close
-    panel.querySelector(".twi-prefs-header").addEventListener("click", () => {
-      const body   = panel.querySelector(".twi-prefs-body");
-      const arrow  = panel.querySelector(".twi-prefs-arrow");
-      const header = panel.querySelector(".twi-prefs-header");
-      const open   = !body.hidden;
-      body.hidden  = open;
-      arrow.innerHTML = open ? "&#9658;" : "&#9660;";
-      header.setAttribute("aria-expanded", String(!open));
-    });
+  // ── Settings: wire up panel events (save / forget / accordion) ─────────────
 
-    // Placement strategy:
-    // 1. Desktop/Android — React root exists → insert after it (keeps panel outside React's DOM)
-    // 2. iOS mobile (TornPDA iPhone) — no React root, page is a plain server-rendered layout.
-    //    Anchor to the "UPDATE SETTINGS" button's parent container so the panel lands
-    //    inside the scrollable settings block, immediately below the existing content.
-    //    If that button isn't in the DOM yet, return early — the 2s interval will retry.
-    // 3. Any other fallback — document.body
-    const reactRoot = document.getElementById("react-root") ||
-                      document.getElementById("root") ||
-                      document.getElementById("app");
-    if (reactRoot) {
-      reactRoot.insertAdjacentElement("afterend", panel);
-    } else if (/iPhone/i.test(navigator.userAgent)) {
-      const updateBtn = Array.from(document.querySelectorAll("button, input[type=submit]"))
-        .find(el => /update\s+settings/i.test(el.textContent || el.value || ""));
-      if (!updateBtn) return;  // not rendered yet — interval will retry
-      const anchor = updateBtn.closest("div, section, form") || updateBtn.parentElement;
-      anchor.insertAdjacentElement("afterend", panel);
-    } else {
-      document.body.appendChild(panel);
+  function wireSettingsPanel(panel) {
+    // Accordion only present on the desktop inline panel, not the mobile modal
+    const accordionHeader = panel.querySelector(".twi-prefs-header");
+    if (accordionHeader) {
+      accordionHeader.addEventListener("click", () => {
+        const body   = panel.querySelector(".twi-prefs-body");
+        const arrow  = panel.querySelector(".twi-prefs-arrow");
+        const open   = !body.hidden;
+        body.hidden  = open;
+        arrow.innerHTML = open ? "&#9658;" : "&#9660;";
+        accordionHeader.setAttribute("aria-expanded", String(!open));
+      });
     }
-    updateSettingsPanel();
-    renderAssignmentTable();
 
     panel.querySelector("#twi-alert-save").addEventListener("click", () => {
       const keyInput  = panel.querySelector("#twi-alert-apikey");
@@ -574,13 +552,131 @@
     });
   }
 
+  // ── iPhone: floating gear FAB + modal overlay ──────────────────────────────
+  // On TornPDA iPhone, preferences.php is not reliably injectable.
+  // Instead inject a fixed ⚙ button on every page that opens a modal overlay.
+
+  function injectMobileSettingsFAB() {
+    if (document.getElementById("twi-alert-fab")) return;
+
+    // FAB button
+    const fab = document.createElement("button");
+    fab.id = "twi-alert-fab";
+    fab.type = "button";
+    fab.setAttribute("aria-label", "TWI Chain Alert Settings");
+    fab.textContent = "⚙";
+
+    // Modal backdrop
+    const backdrop = document.createElement("div");
+    backdrop.id = "twi-alert-modal-backdrop";
+
+    // Panel inside modal
+    const modal = document.createElement("div");
+    modal.id = "twi-alert-modal";
+    modal.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;
+                  padding:12px 16px;background:#2a2a2a;border-radius:8px 8px 0 0;
+                  border-bottom:1px solid #3a3a3a;">
+        <span style="font-size:15px;font-weight:700;color:#f0f0f0;">TWI Chain Alert Settings</span>
+        <button type="button" id="twi-alert-modal-close"
+          style="background:none;border:none;color:#aaa;font-size:22px;
+                 cursor:pointer;padding:0 4px;line-height:1;">&#x2715;</button>
+      </div>
+      <div style="padding:16px;overflow-y:auto;flex:1;-webkit-overflow-scrolling:touch;">
+
+        <div class="twi-settings-row">
+          <label for="twi-alert-apikey"><strong>Torn API Key</strong></label>
+          <input type="text" id="twi-alert-apikey" class="twi-settings-input"
+            maxlength="16" placeholder="Paste 16-char API key here..."
+            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+          <p class="twi-settings-hint">
+            Provide your 16-character Torn API key with <em>Faction</em> read access.
+          </p>
+        </div>
+
+        <div class="twi-settings-row twi-settings-row-inline">
+          <input type="checkbox" id="twi-alert-enabled" />
+          <label for="twi-alert-enabled">Enable TWI Chain Alert banners</label>
+        </div>
+
+        <div class="twi-settings-status" id="twi-alert-status-line"></div>
+
+        <div class="twi-settings-actions">
+          <button type="button" id="twi-alert-save" class="torn-btn twi-btn-save">Save &amp; Connect</button>
+          <button type="button" id="twi-alert-forget" class="torn-btn twi-btn-secondary">Forget API Key</button>
+          <span id="twi-alert-saved-msg" style="display:none;color:#4CAF50;font-weight:bold;margin-left:10px;">&#10003; Saved!</span>
+        </div>
+
+        <div id="twi-assign-section">
+          <div class="twi-assign-heading" style="margin-top:18px;padding-top:14px;border-top:1px solid #333;">Bonus Hit Assignments</div>
+          <div id="twi-assign-table-wrap"></div>
+        </div>
+
+      </div>`;
+
+    backdrop.appendChild(modal);
+
+    // Append to documentElement so WKWebView body-clipping can't hide it
+    document.documentElement.appendChild(fab);
+    document.documentElement.appendChild(backdrop);
+
+    // Open modal
+    fab.addEventListener("click", () => {
+      backdrop.style.display = "flex";
+      updateSettingsPanel();
+      renderAssignmentTable();
+    });
+
+    // Close modal via × button
+    modal.querySelector("#twi-alert-modal-close").addEventListener("click", () => {
+      backdrop.style.display = "none";
+    });
+
+    // Close on backdrop tap (outside modal)
+    backdrop.addEventListener("click", (e) => {
+      if (e.target === backdrop) backdrop.style.display = "none";
+    });
+
+    // Wire save/forget into the modal panel
+    wireSettingsPanel(modal);
+    updateSettingsPanel();
+    renderAssignmentTable();
+  }
+
+  // ── Settings page injection (preferences.php, desktop/tablet only) ──────────
+
+  function injectSettingsPage() {
+    if (document.getElementById("twi-alert-settings")) return;
+
+    const panel = document.createElement("div");
+    panel.id = "twi-alert-settings";
+    panel.innerHTML = buildSettingsPanelHTML();
+
+    // Placement strategy:
+    // 1. Desktop/Android — React root exists → insert after it
+    // 2. Fallback — document.body
+    const reactRoot = document.getElementById("react-root") ||
+                      document.getElementById("root") ||
+                      document.getElementById("app");
+    if (reactRoot) {
+      reactRoot.insertAdjacentElement("afterend", panel);
+    } else {
+      document.body.appendChild(panel);
+    }
+    wireSettingsPanel(panel);
+    updateSettingsPanel();
+    renderAssignmentTable();
+  }
+
   function updateSettingsPanel() {
-    const panel = document.getElementById("twi-alert-settings");
+    // Works for both the inline panel (desktop) and the modal panel (iPhone)
+    const panel = document.getElementById("twi-alert-settings") ||
+                  document.getElementById("twi-alert-modal");
     if (!panel) return;
     const keyInput   = panel.querySelector("#twi-alert-apikey");
     const enabledCb  = panel.querySelector("#twi-alert-enabled");
     const statusLine = panel.querySelector("#twi-alert-status-line");
-    const badge      = panel.querySelector("#twi-alert-badge");
+    const badge      = document.getElementById("twi-alert-badge");
     if (keyInput && !keyInput.matches(":focus")) {
       keyInput.value = "";
       keyInput.placeholder = state.apiKey
@@ -607,11 +703,16 @@
 
   // ── ensureUI ───────────────────────────────────────────────────────────────
 
+  const IS_IPHONE = /iPhone/i.test(navigator.userAgent);
+
   function ensureUI() {
     ensureBannerEl();
 
-    // Settings only on the Torn preferences page
-    if (isSettingsPage()) {
+    if (IS_IPHONE) {
+      // iPhone: FAB available on all pages; settings page injection not needed
+      injectMobileSettingsFAB();
+    } else if (isSettingsPage()) {
+      // Desktop/tablet: inline panel on preferences.php only
       injectSettingsPage();
       return;
     }
@@ -638,7 +739,8 @@
 
   // 2s interval: drives cache-based banner on non-faction pages + chain observer recovery.
   setInterval(() => {
-    if (isSettingsPage()) { injectSettingsPage(); return; }
+    if (IS_IPHONE) { injectMobileSettingsFAB(); }
+    else if (isSettingsPage()) { injectSettingsPage(); return; }
     ensureBannerEl();
     if (!state.enabled) return;
     if (isFactionPage()) {
@@ -796,6 +898,49 @@
     .twi-assign-inline-cancel { font-size: 11px !important; padding: 2px 6px !important;
       margin-left: 4px !important; vertical-align: top; }
     .twi-assign-inline-status { display: block; font-size: 11px; color: #888; margin-top: 3px; }
+
+    /* ── iPhone FAB + modal ── */
+    #twi-alert-fab {
+      display: none;
+    }
+    @media (max-width: 600px) {
+      #twi-alert-fab {
+        display: flex; align-items: center; justify-content: center;
+        position: fixed;
+        bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+        right: 16px;
+        z-index: 99998;
+        width: 48px; height: 48px;
+        border-radius: 50%;
+        background: #2a2a2a;
+        border: 2px solid #4a9eff;
+        color: #f0f0f0;
+        font-size: 22px;
+        cursor: pointer;
+        touch-action: manipulation;
+        -webkit-user-select: none; user-select: none;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.6);
+      }
+    }
+    #twi-alert-modal-backdrop {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      z-index: 100000;
+      background: rgba(0,0,0,0.7);
+      align-items: flex-end;
+      justify-content: center;
+      -webkit-overflow-scrolling: touch;
+    }
+    #twi-alert-modal {
+      display: flex; flex-direction: column;
+      width: 100%; max-width: 520px;
+      max-height: 85vh;
+      background: #181818;
+      border-radius: 8px 8px 0 0;
+      overflow: hidden;
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
   `);
 
   // ── Boot ───────────────────────────────────────────────────────────────────

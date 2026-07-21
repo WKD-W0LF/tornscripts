@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Faction_Calls (Universal)
 // @namespace    twilight-reborn
-// @version      2.1.4
+// @version      2.1.5
 // @author       Leandria & Wolf (Universal: Bob)
 // @description  Shared target calls, priorities and assist requests for Twilight - Reborn [56966]. Settings on Torn preferences page. Optimized for all devices.
 // @license      MIT
@@ -625,10 +625,6 @@
 
   function injectSettingsPage() {
     if (document.getElementById("twi-settings-details")) return;
-    // Only inject once the preferences page content list is present.
-    const hasSettingsNav = Array.from(document.querySelectorAll("ul li"))
-      .some(li => /general\s+settings|security\s+settings/i.test(li.textContent));
-    if (!hasSettingsNav) return;  // page not ready yet — try again next interval tick
 
     const panel = document.createElement("div");
     panel.id = "twi-settings-details";

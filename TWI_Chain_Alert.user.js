@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.3.5
+// @version      1.3.6
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Settings on Torn preferences page. Banner visible on all Torn pages.
 // @license      MIT
@@ -463,15 +463,6 @@
 
   function injectSettingsPage() {
     if (document.getElementById("twi-alert-settings")) return;
-    // Only inject once the preferences page content list is present.
-    // "General settings" is always the first item — its presence confirms
-    // the settings nav has rendered on all platforms (desktop, TornPDA iOS/Android).
-    if (!document.querySelector("ul li a[href*='preferences'], .settings-list, ul li a[href^='/preferences']")) {
-      // Fallback: accept any <ul> that contains settings-like links
-      const hasSettingsNav = Array.from(document.querySelectorAll("ul li"))
-        .some(li => /general\s+settings|security\s+settings/i.test(li.textContent));
-      if (!hasSettingsNav) return;  // page not ready yet — try again next interval tick
-    }
 
     const panel = document.createElement("div");
     panel.id = "twi-alert-settings";

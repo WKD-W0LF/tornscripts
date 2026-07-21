@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.3.8
+// @version      1.3.9
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Settings on Torn preferences page. Banner visible on all Torn pages.
 // @license      MIT
@@ -559,56 +559,112 @@
   function injectMobileSettingsFAB() {
     if (document.getElementById("twi-alert-fab")) return;
 
-    // FAB button
+    // ── FAB — all styles inline so GM_addStyle/CSS injection order doesn't matter ──
     const fab = document.createElement("button");
     fab.id = "twi-alert-fab";
     fab.type = "button";
     fab.setAttribute("aria-label", "TWI Chain Alert Settings");
     fab.textContent = "⚙";
+    Object.assign(fab.style, {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      position: "fixed",
+      bottom: "90px",       // above TornPDA's native bottom toolbar (~70px)
+      right: "14px",
+      zIndex: "2147483647", // max z-index — above everything TornPDA renders
+      width: "46px",
+      height: "46px",
+      borderRadius: "50%",
+      background: "#1a2a3a",
+      border: "2px solid #4a9eff",
+      color: "#f0f0f0",
+      fontSize: "22px",
+      cursor: "pointer",
+      touchAction: "manipulation",
+      WebkitUserSelect: "none",
+      userSelect: "none",
+      boxShadow: "0 2px 10px rgba(0,0,0,0.8)",
+      padding: "0",
+    });
 
-    // Modal backdrop
+    // ── Backdrop — full-screen overlay, also fully inline ──
     const backdrop = document.createElement("div");
     backdrop.id = "twi-alert-modal-backdrop";
+    Object.assign(backdrop.style, {
+      display: "none",
+      position: "fixed",
+      top: "0", left: "0", right: "0", bottom: "0",
+      zIndex: "2147483646",
+      background: "rgba(0,0,0,0.75)",
+      alignItems: "flex-end",
+      justifyContent: "center",
+      WebkitOverflowScrolling: "touch",
+    });
 
-    // Panel inside modal
+    // ── Modal sheet ──
     const modal = document.createElement("div");
     modal.id = "twi-alert-modal";
+    Object.assign(modal.style, {
+      display: "flex",
+      flexDirection: "column",
+      width: "100%",
+      maxHeight: "82vh",
+      background: "#181818",
+      borderRadius: "10px 10px 0 0",
+      overflow: "hidden",
+    });
     modal.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;
-                  padding:12px 16px;background:#2a2a2a;border-radius:8px 8px 0 0;
-                  border-bottom:1px solid #3a3a3a;">
-        <span style="font-size:15px;font-weight:700;color:#f0f0f0;">TWI Chain Alert Settings</span>
+                  padding:14px 16px;background:#252525;
+                  border-bottom:1px solid #3a3a3a;flex-shrink:0;">
+        <span style="font-size:15px;font-weight:700;color:#f0f0f0;">⚙ TWI Chain Alert Settings</span>
         <button type="button" id="twi-alert-modal-close"
-          style="background:none;border:none;color:#aaa;font-size:22px;
-                 cursor:pointer;padding:0 4px;line-height:1;">&#x2715;</button>
+          style="background:none;border:none;color:#aaa;font-size:26px;
+                 cursor:pointer;padding:2px 6px;line-height:1;touch-action:manipulation;">&#x2715;</button>
       </div>
-      <div style="padding:16px;overflow-y:auto;flex:1;-webkit-overflow-scrolling:touch;">
+      <div style="padding:16px 16px 24px;overflow-y:auto;flex:1;-webkit-overflow-scrolling:touch;
+                  box-sizing:border-box;">
 
-        <div class="twi-settings-row">
-          <label for="twi-alert-apikey"><strong>Torn API Key</strong></label>
-          <input type="text" id="twi-alert-apikey" class="twi-settings-input"
+        <div style="margin-bottom:14px;">
+          <label style="display:block;font-size:13px;color:#ccc;margin-bottom:6px;"><strong style="color:#fff;">Torn API Key</strong></label>
+          <input type="text" id="twi-alert-apikey"
+            style="display:block;width:100%;padding:11px 12px;border:1px solid #555;border-radius:6px;
+                   background:#111;color:#fff;font-size:16px;font-family:monospace;box-sizing:border-box;"
             maxlength="16" placeholder="Paste 16-char API key here..."
             autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
-          <p class="twi-settings-hint">
-            Provide your 16-character Torn API key with <em>Faction</em> read access.
+          <p style="margin:6px 0 0;font-size:12px;color:#888;line-height:1.5;">
+            Your 16-character Torn API key with <em>Faction</em> read access.
           </p>
         </div>
 
-        <div class="twi-settings-row twi-settings-row-inline">
-          <input type="checkbox" id="twi-alert-enabled" />
-          <label for="twi-alert-enabled">Enable TWI Chain Alert banners</label>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+          <input type="checkbox" id="twi-alert-enabled"
+            style="width:18px;height:18px;cursor:pointer;flex-shrink:0;" />
+          <label for="twi-alert-enabled" style="font-size:14px;color:#ccc;cursor:pointer;">
+            Enable TWI Chain Alert banners
+          </label>
         </div>
 
-        <div class="twi-settings-status" id="twi-alert-status-line"></div>
+        <div id="twi-alert-status-line" style="margin:10px 0 14px;font-size:13px;min-height:18px;font-weight:500;"></div>
 
-        <div class="twi-settings-actions">
-          <button type="button" id="twi-alert-save" class="torn-btn twi-btn-save">Save &amp; Connect</button>
-          <button type="button" id="twi-alert-forget" class="torn-btn twi-btn-secondary">Forget API Key</button>
-          <span id="twi-alert-saved-msg" style="display:none;color:#4CAF50;font-weight:bold;margin-left:10px;">&#10003; Saved!</span>
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:16px;">
+          <button type="button" id="twi-alert-save"
+            style="padding:10px 18px;background:#2f9e44;color:#fff;border:none;border-radius:6px;
+                   font-size:14px;font-weight:700;cursor:pointer;touch-action:manipulation;">
+            Save &amp; Connect
+          </button>
+          <button type="button" id="twi-alert-forget"
+            style="padding:10px 14px;background:#555;color:#ddd;border:none;border-radius:6px;
+                   font-size:14px;cursor:pointer;touch-action:manipulation;">
+            Forget API Key
+          </button>
+          <span id="twi-alert-saved-msg" style="display:none;color:#4CAF50;font-weight:bold;">&#10003; Saved!</span>
         </div>
 
-        <div id="twi-assign-section">
-          <div class="twi-assign-heading" style="margin-top:18px;padding-top:14px;border-top:1px solid #333;">Bonus Hit Assignments</div>
+        <div id="twi-assign-section" style="border-top:1px solid #333;padding-top:14px;margin-top:4px;">
+          <div style="font-size:12px;font-weight:700;color:#aaa;margin-bottom:8px;
+                      text-transform:uppercase;letter-spacing:0.5px;">Bonus Hit Assignments</div>
           <div id="twi-assign-table-wrap"></div>
         </div>
 
@@ -616,28 +672,22 @@
 
     backdrop.appendChild(modal);
 
-    // Append to documentElement so WKWebView body-clipping can't hide it
-    document.documentElement.appendChild(fab);
-    document.documentElement.appendChild(backdrop);
+    // Append to <html> — bypasses any body overflow/clip
+    (document.body || document.documentElement).appendChild(fab);
+    (document.body || document.documentElement).appendChild(backdrop);
 
-    // Open modal
     fab.addEventListener("click", () => {
       backdrop.style.display = "flex";
       updateSettingsPanel();
       renderAssignmentTable();
     });
-
-    // Close modal via × button
     modal.querySelector("#twi-alert-modal-close").addEventListener("click", () => {
       backdrop.style.display = "none";
     });
-
-    // Close on backdrop tap (outside modal)
     backdrop.addEventListener("click", (e) => {
       if (e.target === backdrop) backdrop.style.display = "none";
     });
 
-    // Wire save/forget into the modal panel
     wireSettingsPanel(modal);
     updateSettingsPanel();
     renderAssignmentTable();

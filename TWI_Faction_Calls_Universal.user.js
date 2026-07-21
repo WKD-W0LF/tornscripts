@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Faction_Calls (Universal)
 // @namespace    twilight-reborn
-// @version      2.1.9
+// @version      2.2.0
 // @author       Leandria & Wolf (Universal: Bob)
 // @description  Shared target calls, priorities and assist requests for Twilight - Reborn [56966]. Settings on Torn preferences page. Optimized for all devices.
 // @license      MIT
@@ -19,6 +19,22 @@
 // ==/UserScript==
 
 // ── Changelog ────────────────────────────────────────────────────────────────
+// v2.2.0 (2026-07-21) — TornPDA (iOS) settings-panel placement fix
+//   - Root cause: the settings panel was inserted as a *sibling* after
+//     #react-root (or appended to document.body). On iOS Safari that lands in
+//     the empty area below the "General settings" card, but inside TornPDA's
+//     WKWebView the SPA re-renders after the first inject and the react-root
+//     sibling / body append ends up outside the visible content column, so the
+//     panel never showed.
+//   - Fix: the panel is now inserted INTO the main content column
+//     (#mainContainer / .content-wrapper / [role=main] / react-root, first that
+//     exists and is rendered) as its last child, so it inherits page width and
+//     flows directly beneath the General settings card on every platform.
+//   - injectSettingsPage() is now self-healing: re-attaches the panel if
+//     TornPDA's SPA re-render detaches or reparents it (the existing
+//     pageObserver already calls ensureUI on every mutation).
+//   - Added addStyle() wrapper: falls back to a <style> element if GM_addStyle
+//     is unavailable/flaky in the embedded webview.
 // v2.1.1 (2026-07-20) — updated by Claude Sonnet
 //   - Cross-platform hardening pass (Apple/Android mobile+tablet, Safari/
 //     Chrome/Firefox desktop):
@@ -60,6 +76,19 @@
   function lsGet(key) { try { return localStorage.getItem(key); } catch { return null; } }
   function lsSet(key, value) { try { localStorage.setItem(key, value); } catch {} }
   function lsRemove(key) { try { localStorage.removeItem(key); } catch {} }
+
+  // GM_addStyle can be missing or a no-op in some embedded webviews (TornPDA).
+  // Fall back to a plain <style> element so our CSS always applies.
+  function addStyle(css) {
+    try {
+      if (typeof GM_addStyle === "function") { GM_addStyle(css); return; }
+    } catch {}
+    try {
+      const s = document.createElement("style");
+      s.textContent = css;
+      (document.head || document.documentElement).appendChild(s);
+    } catch {}
+  }
 
   const state = {
     apiKey: lsGet(`${PREFIX}api-key`) || "",
@@ -716,26 +745,48 @@
   }
 
   // ── Settings page injection (preferences.php) ──────────────────────────────
-  // All platforms: inject accordion panel into the page.
-  // Desktop/Android: React root exists — insert after it.
-  // iPhone TornPDA: no React root — append to document.body (lands in empty
-  //   black space below the "General settings" card, confirmed from screenshot).
+  // Insert the panel as the LAST CHILD of the main content column so it inherits
+  // the page width and flows directly beneath the "General settings" card on
+  // every platform. The old approach (sibling after #react-root, or append to
+  // document.body) worked on iOS Safari but failed inside TornPDA's WKWebView,
+  // where the SPA re-renders after the first inject and the react-root sibling
+  // lands outside the visible content column.
+
+  function findContentColumn() {
+    const selectors = [
+      "#mainContainer",      // legacy Torn outer content column (most stable)
+      ".content-wrapper",    // React content wrapper
+      "[role='main']",
+      "#react-root",
+      "#root",
+      "#app"
+    ];
+    for (const sel of selectors) {
+      const el = document.querySelector(sel);
+      if (el && el.getClientRects().length) return el;   // exists & rendered
+    }
+    return document.body || document.documentElement;
+  }
 
   function injectSettingsPage() {
-    if (document.getElementById("twi-settings-details")) return;
+    const anchor = findContentColumn();
+    const existing = document.getElementById("twi-settings-details");
+
+    if (existing) {
+      // Self-heal: TornPDA's SPA re-render can detach or reparent our panel.
+      if (!document.body.contains(existing)) {
+        anchor.appendChild(existing);
+      } else if (existing.parentElement !== anchor && !anchor.contains(existing)) {
+        anchor.appendChild(existing);
+      }
+      return;
+    }
 
     const panel = document.createElement("div");
     panel.id = "twi-settings-details";
     panel.innerHTML = buildSettingsPanelHTML();
+    anchor.appendChild(panel);
 
-    const reactRoot = document.getElementById("react-root") ||
-                      document.getElementById("root") ||
-                      document.getElementById("app");
-    if (reactRoot) {
-      reactRoot.insertAdjacentElement("afterend", panel);
-    } else {
-      document.body.appendChild(panel);
-    }
     wireSettingsPanel(panel);
     updateSettingsPanel();
   }
@@ -799,7 +850,7 @@
 
   // ── Styles ─────────────────────────────────────────────────────────────────
 
-  GM_addStyle(`
+  addStyle(`
     /* ── Toggle checkbox ── */
     .twi-sort-toggle-container{
       position:absolute;left:10px;display:inline-flex;align-items:center

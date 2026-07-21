@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.3.6
+// @version      1.3.7
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Settings on Torn preferences page. Banner visible on all Torn pages.
 // @license      MIT
@@ -517,13 +517,24 @@
       header.setAttribute("aria-expanded", String(!open));
     });
 
-    // Append after Torn's React root if present, otherwise end of body.
-    // This ensures our panel is never covered by React's re-render.
+    // Placement strategy:
+    // 1. Desktop/Android — React root exists → insert after it (keeps panel outside React's DOM)
+    // 2. iOS mobile (TornPDA iPhone) — no React root, page is a plain server-rendered layout.
+    //    Anchor to the "UPDATE SETTINGS" button's parent container so the panel lands
+    //    inside the scrollable settings block, immediately below the existing content.
+    //    If that button isn't in the DOM yet, return early — the 2s interval will retry.
+    // 3. Any other fallback — document.body
     const reactRoot = document.getElementById("react-root") ||
                       document.getElementById("root") ||
                       document.getElementById("app");
     if (reactRoot) {
       reactRoot.insertAdjacentElement("afterend", panel);
+    } else if (/iPhone/i.test(navigator.userAgent)) {
+      const updateBtn = Array.from(document.querySelectorAll("button, input[type=submit]"))
+        .find(el => /update\s+settings/i.test(el.textContent || el.value || ""));
+      if (!updateBtn) return;  // not rendered yet — interval will retry
+      const anchor = updateBtn.closest("div, section, form") || updateBtn.parentElement;
+      anchor.insertAdjacentElement("afterend", panel);
     } else {
       document.body.appendChild(panel);
     }

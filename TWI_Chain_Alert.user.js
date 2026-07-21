@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.7.0
+// @version      1.7.1
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Settings on Torn preferences page. Banner visible on all Torn pages.
 // @license      MIT
@@ -56,7 +56,7 @@
   // Banners fire when chain count is within 5 of any of these.
   const BONUS_TARGETS   = [9, 10, 21, 22, 23, 24, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000];
   // Targets shown in the Settings assignment table (manually assignable slots).
-  const ASSIGNABLE      = new Set([9, 10, 21, 22, 23, 24, 25, 50, 250, 500]);
+  const ASSIGNABLE      = new Set([9, 10, 21, 22, 23, 24, 25, 50, 100, 250, 500, 1000]);
   const CHAIN_CACHE_TTL = 10000;  // ms — hide banner if cache is older than this
   const ASSIGN_POLL_MS  = 30000;  // re-fetch assignments every 30s
   const PREFIX          = "twi-chain-alert-";

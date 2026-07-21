@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.5.0
+// @version      1.6.0
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Settings on Torn preferences page. Banner visible on all Torn pages.
 // @license      MIT
@@ -17,6 +17,15 @@
 // ==/UserScript==
 
 // ── Changelog ────────────────────────────────────────────────────────────────
+// v1.6.0 (2026-07-22) — Functional updates:
+//   1. Replaced BONUS_NUMBERS with ALERT_COUNTS = [9,10,21,22,23,24,25].
+//      All tracked counts trigger red/urgent banners (no yellow).
+//      API server bonus-assignments endpoint unchanged.
+//   2. Hitter slots for counts 9,10 and 21–25 assignable in Settings (admin).
+//   3. Personal turn banner is green; all other alerts are red.
+//      Banner shows assigned hitter's name.
+//   4. Banners suppressed when viewing any OTHER faction's page.
+//      Fire normally on our faction page and on all non-faction pages.
 // v1.5.0 (2026-07-21) — Release: TornPDA (iOS) settings-panel placement fix.
 //   Panel now anchors into the content column ([role=main]/.content-wrapper)
 //   and is inserted directly after the native "General settings" card, so it
@@ -42,7 +51,9 @@
   const TORN_API_BASE   = "https://api.torn.com";
   const ALLOWED_FACTION_ID = 56966;
   const ADMIN_IDS       = new Set(["3647423","3917106","3658650","3855001","3926412","4152155","4157019"]);
-  const BONUS_NUMBERS   = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000];
+  // Chain-count slots that trigger alerts. All are treated as urgent (red).
+  // 9,10 = end-of-chain run-up; 21–25 = faction bonus window.
+  const ALERT_COUNTS    = [9, 10, 21, 22, 23, 24, 25];
   const CHAIN_CACHE_TTL = 10000;  // ms — hide banner if cache is older than this
   const ASSIGN_POLL_MS  = 30000;  // re-fetch assignments every 30s
   const PREFIX          = "twi-chain-alert-";
@@ -128,9 +139,20 @@
 
   // ── Page detection ─────────────────────────────────────────────────────────
 
-  function isSettingsPage() { return location.pathname.includes("/preferences.php"); }
-  function isFactionPage()  { return location.pathname.includes("/factions.php"); }
-  function isChainPage()    { return isFactionPage() && Boolean(document.querySelector("div.chain-box")); }
+  function isSettingsPage()  { return location.pathname.includes("/preferences.php"); }
+  function isFactionPage()   { return location.pathname.includes("/factions.php"); }
+  function isChainPage()     { return isFactionPage() && Boolean(document.querySelector("div.chain-box")); }
+
+  // Returns true when on ANOTHER faction's page (not ours).
+  // We read the faction ID from the URL ?step=profile&ID=XXXX.
+  // If no ID is in the URL (bare /factions.php or hash nav) we cannot confirm
+  // it is a different faction, so we return false (allow banners to show).
+  function isOtherFactionPage() {
+    if (!isFactionPage()) return false;
+    const urlId = new URLSearchParams(location.search).get("ID");
+    if (!urlId) return false;                            // no ID — our nav, allow banners
+    return urlId !== String(ALLOWED_FACTION_ID);         // different faction — suppress
+  }
 
   // ── Session / auth ─────────────────────────────────────────────────────────
 
@@ -257,33 +279,33 @@
     (document.body || document.documentElement).appendChild(banner);
   }
 
-  function showBanner(bonusNumber, level, assignedName) {
+  function showBanner(targetCount, assignedName) {
     ensureBannerEl();
     const banner = document.getElementById("twi-alert-banner");
     if (!banner) return;
-    state.alertedFor = bonusNumber;
-    banner.className = level === "urgent" ? "twi-alert-urgent" : "twi-alert-warn";
-    banner.style.display = "";
-    const diff = bonusNumber - state.chainCount;
+    state.alertedFor = targetCount;
+    const diff = targetCount - state.chainCount;
     const hitterLine = assignedName ? ` — ${assignedName}'s hit` : "";
-    if (level === "urgent") {
-      banner.textContent = `🚨 Slow Hits Please — Bonus Level in 1 hit! (${bonusNumber})${hitterLine}`;
+    banner.className = "twi-alert-urgent";
+    banner.style.display = "";
+    if (diff === 1) {
+      banner.textContent = `🚨 Slow Hits — Hit ${targetCount} NEXT!${hitterLine}`;
     } else {
-      banner.textContent = `⚠️ Slow Hits Please — Bonus Level in ${diff} hits! (${bonusNumber})${hitterLine}`;
+      banner.textContent = `🚨 Slow Hits — Hit ${targetCount} in ${diff} hits!${hitterLine}`;
     }
   }
 
-  function showPersonalBanner(bonusNumber, diff) {
+  function showPersonalBanner(targetCount, diff) {
     ensureBannerEl();
     const banner = document.getElementById("twi-alert-banner");
     if (!banner) return;
-    state.alertedFor = bonusNumber;
+    state.alertedFor = targetCount;
     banner.className = diff === 1 ? "twi-alert-mine-urgent" : "twi-alert-mine";
     banner.style.display = "";
     if (diff === 1) {
-      banner.textContent = `🚨 ATTACK NOW — Bonus ${bonusNumber} hit is YOURS!`;
+      banner.textContent = `🟢 ATTACK NOW — Hit ${targetCount} is YOURS!`;
     } else {
-      banner.textContent = `🎯 YOUR HIT in ${diff} — Get ready for bonus ${bonusNumber}!`;
+      banner.textContent = `🟢 YOUR HIT in ${diff} — Get ready for hit ${targetCount}!`;
     }
   }
 
@@ -298,16 +320,18 @@
   function checkAlerts() {
     const count = state.chainCount;
     if (count === null || count === 0) { hideBanner(); return; }
-    const nextBonus = BONUS_NUMBERS.find(n => n > count);
-    if (!nextBonus) { hideBanner(); return; }
-    const diff = nextBonus - count;
+    // Suppress banners entirely when viewing a different faction's page
+    if (isOtherFactionPage()) { hideBanner(); return; }
+    const nextTarget = ALERT_COUNTS.find(n => n > count);
+    if (!nextTarget) { hideBanner(); return; }
+    const diff = nextTarget - count;
     if (diff > 5) { hideBanner(); return; }
-    const assignment = state.assignments.get(nextBonus);
+    const assignment = state.assignments.get(nextTarget);
     const isMyHit = assignment && assignment.playerId === state.playerId && state.playerId;
     if (isMyHit) {
-      showPersonalBanner(nextBonus, diff);
+      showPersonalBanner(nextTarget, diff);
     } else {
-      showBanner(nextBonus, diff === 1 ? "urgent" : "warn", assignment?.playerName || null);
+      showBanner(nextTarget, assignment?.playerName || null);
     }
   }
 
@@ -374,10 +398,10 @@
   function renderAssignmentTable() {
     const container = document.getElementById("twi-assign-table-wrap");
     if (!container) return;
-    const rows = BONUS_NUMBERS.map(bn => {
+    const rows = ALERT_COUNTS.map(bn => {
       const a = state.assignments.get(bn);
       return `<tr>
-        <td class="twi-assign-bn">${bn}</td>
+        <td class="twi-assign-bn">Hit ${bn}</td>
         <td class="twi-assign-name">${a ? escHtml(a.playerName) : '<span class="twi-assign-empty">— unassigned —</span>'}</td>
         <td class="twi-assign-actions">
           ${isAdmin() ? `
@@ -392,7 +416,7 @@
     container.innerHTML = `
       <table class="twi-assign-table">
         <thead><tr>
-          <th>Bonus</th><th>Assigned Hitter</th>${isAdmin() ? "<th></th>" : ""}
+          <th>Chain Hit</th><th>Assigned Hitter</th>${isAdmin() ? "<th></th>" : ""}
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>`;
@@ -691,7 +715,11 @@
 
     if (!state.enabled) { hideBanner(); return; }
 
-    if (isChainPage()) {
+    if (isOtherFactionPage()) {
+      // Viewing a different faction — detach observer and suppress all banners
+      detachChainObserver();
+      hideBanner();
+    } else if (isChainPage()) {
       attachChainObserver();
     } else if (isFactionPage()) {
       detachChainObserver();
@@ -714,7 +742,10 @@
     if (isSettingsPage()) { injectSettingsPage(); return; }
     ensureBannerEl();
     if (!state.enabled) return;
-    if (isFactionPage()) {
+    if (isOtherFactionPage()) {
+      if (chainObserver) detachChainObserver();
+      hideBanner();
+    } else if (isFactionPage()) {
       if (isChainPage() && !chainObserver) attachChainObserver();
       else if (!isChainPage() && chainObserver) detachChainObserver();
     } else {
@@ -748,22 +779,19 @@
          without env() support. */
       padding-top: calc(10px + env(safe-area-inset-top, 0px));
     }
-    #twi-alert-banner.twi-alert-warn {
-      display: block; background: #f6c344; color: #3d2f00;
-      border-bottom: 3px solid #e6a800;
-    }
     #twi-alert-banner.twi-alert-urgent {
       display: block; background: #c92a2a; color: #fff;
       border-bottom: 3px solid #ff4444;
       animation: twi-pulse 1s ease-in-out infinite;
     }
+    /* Personal turn — green */
     #twi-alert-banner.twi-alert-mine {
-      display: block; background: #1a5fa8; color: #fff;
-      border-bottom: 3px solid #4a9eff;
+      display: block; background: #1a7a2e; color: #fff;
+      border-bottom: 3px solid #2ecc4a;
     }
     #twi-alert-banner.twi-alert-mine-urgent {
-      display: block; background: #7c35ab; color: #fff;
-      border-bottom: 3px solid #c084fc;
+      display: block; background: #157a25; color: #fff;
+      border-bottom: 3px solid #2ecc4a;
       animation: twi-pulse 0.8s ease-in-out infinite;
     }
     @keyframes twi-pulse { 0%,100% { opacity:1; } 50% { opacity:0.75; } }

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.6.0
+// @version      1.7.0
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Settings on Torn preferences page. Banner visible on all Torn pages.
 // @license      MIT
@@ -17,15 +17,16 @@
 // ==/UserScript==
 
 // ── Changelog ────────────────────────────────────────────────────────────────
-// v1.6.0 (2026-07-22) — Functional updates:
-//   1. Replaced BONUS_NUMBERS with ALERT_COUNTS = [9,10,21,22,23,24,25].
-//      All tracked counts trigger red/urgent banners (no yellow).
-//      API server bonus-assignments endpoint unchanged.
-//   2. Hitter slots for counts 9,10 and 21–25 assignable in Settings (admin).
-//   3. Personal turn banner is green; all other alerts are red.
-//      Banner shows assigned hitter's name.
-//   4. Banners suppressed when viewing any OTHER faction's page.
-//      Fire normally on our faction page and on all non-faction pages.
+// v1.7.0 (2026-07-22) — Alert system overhaul:
+//   - Full Torn bonus list restored: [10,25,50,100,250,500,1000,2500,5000,…]
+//     plus TWI-specific counts [9,21,22,23,24] tracked as bonus targets too.
+//   - All targets use a 5-hit warning window:
+//       diff 2–5 → yellow "Slow Hits" warning with assigned hitter's name
+//       diff 1   → red "NEXT HIT" urgent with assigned hitter's name
+//   - Green banner when it is the logged-in user's assigned hit.
+//   - Manually assignable targets (shown in Settings panel):
+//     9, 10, 21–25, 50, 250, 500. All others display assignment if set.
+//   - Banners still suppressed on other factions' pages (v1.6.0 behaviour).
 // v1.5.0 (2026-07-21) — Release: TornPDA (iOS) settings-panel placement fix.
 //   Panel now anchors into the content column ([role=main]/.content-wrapper)
 //   and is inserted directly after the native "General settings" card, so it
@@ -51,9 +52,11 @@
   const TORN_API_BASE   = "https://api.torn.com";
   const ALLOWED_FACTION_ID = 56966;
   const ADMIN_IDS       = new Set(["3647423","3917106","3658650","3855001","3926412","4152155","4157019"]);
-  // Chain-count slots that trigger alerts. All are treated as urgent (red).
-  // 9,10 = end-of-chain run-up; 21–25 = faction bonus window.
-  const ALERT_COUNTS    = [9, 10, 21, 22, 23, 24, 25];
+  // Full bonus target list: standard Torn bonuses + TWI-specific counts.
+  // Banners fire when chain count is within 5 of any of these.
+  const BONUS_TARGETS   = [9, 10, 21, 22, 23, 24, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000];
+  // Targets shown in the Settings assignment table (manually assignable slots).
+  const ASSIGNABLE      = new Set([9, 10, 21, 22, 23, 24, 25, 50, 250, 500]);
   const CHAIN_CACHE_TTL = 10000;  // ms — hide banner if cache is older than this
   const ASSIGN_POLL_MS  = 30000;  // re-fetch assignments every 30s
   const PREFIX          = "twi-chain-alert-";
@@ -286,13 +289,16 @@
     state.alertedFor = targetCount;
     const diff = targetCount - state.chainCount;
     const hitterLine = assignedName ? ` — ${assignedName}'s hit` : "";
-    banner.className = "twi-alert-urgent";
-    banner.style.display = "";
     if (diff === 1) {
+      // On the bonus hit itself — red urgent
+      banner.className = "twi-alert-urgent";
       banner.textContent = `🚨 Slow Hits — Hit ${targetCount} NEXT!${hitterLine}`;
     } else {
-      banner.textContent = `🚨 Slow Hits — Hit ${targetCount} in ${diff} hits!${hitterLine}`;
+      // Warning window (2–5 hits away) — yellow
+      banner.className = "twi-alert-warn";
+      banner.textContent = `⚠️ Slow Hits — Hit ${targetCount} in ${diff} hits!${hitterLine}`;
     }
+    banner.style.display = "";
   }
 
   function showPersonalBanner(targetCount, diff) {
@@ -322,7 +328,7 @@
     if (count === null || count === 0) { hideBanner(); return; }
     // Suppress banners entirely when viewing a different faction's page
     if (isOtherFactionPage()) { hideBanner(); return; }
-    const nextTarget = ALERT_COUNTS.find(n => n > count);
+    const nextTarget = BONUS_TARGETS.find(n => n > count);
     if (!nextTarget) { hideBanner(); return; }
     const diff = nextTarget - count;
     if (diff > 5) { hideBanner(); return; }
@@ -398,7 +404,7 @@
   function renderAssignmentTable() {
     const container = document.getElementById("twi-assign-table-wrap");
     if (!container) return;
-    const rows = ALERT_COUNTS.map(bn => {
+    const rows = [...ASSIGNABLE].sort((a,b) => a-b).map(bn => {
       const a = state.assignments.get(bn);
       return `<tr>
         <td class="twi-assign-bn">Hit ${bn}</td>
@@ -778,6 +784,10 @@
          home-screen web app; ignored (falls back to 10px) on browsers/engines
          without env() support. */
       padding-top: calc(10px + env(safe-area-inset-top, 0px));
+    }
+    #twi-alert-banner.twi-alert-warn {
+      display: block; background: #f6c344; color: #3d2f00;
+      border-bottom: 3px solid #e6a800;
     }
     #twi-alert-banner.twi-alert-urgent {
       display: block; background: #c92a2a; color: #fff;

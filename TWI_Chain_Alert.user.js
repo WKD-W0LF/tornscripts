@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.4.1
+// @version      1.4.2
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Settings on Torn preferences page. Banner visible on all Torn pages.
 // @license      MIT
@@ -17,6 +17,8 @@
 // ==/UserScript==
 
 // ── Changelog ────────────────────────────────────────────────────────────────
+// v1.4.2 (2026-07-21) — TEMP: on-screen DOM diagnostic (twiDebugDumpDom) to
+//   identify TornPDA's content-column selector. Remove this block once pinned.
 // v1.4.1 (2026-07-21) — TornPDA (iOS) settings-panel placement fix
 //   - Root cause: the panel was inserted as a *sibling* after #react-root
 //     (or appended to document.body). On iOS Safari that lands in the empty
@@ -628,7 +630,41 @@
     wireSettingsPanel(panel);
     updateSettingsPanel();
     renderAssignmentTable();
+    twiDebugDumpDom();   // TEMP DIAGNOSTIC — remove after selector is confirmed
   }
+
+  // ── TEMP DIAGNOSTIC ─────────────────────────────────────────────────────────
+  // Renders an on-screen box (no console needed) listing which candidate anchors
+  // exist in TornPDA and every element ID on the page, so the correct content
+  // column can be identified. Remove this whole block once confirmed.
+  function twiDebugDumpDom() {
+    if (document.getElementById("twi-debug-box")) return;
+    const candidates = ["#mainContainer", ".content-wrapper", "[role='main']", "#react-root", "#root", "#app"];
+    const chosen = findContentColumn();
+    const chosenDesc = chosen === document.body ? "document.body (fallback!)"
+      : `<${chosen.tagName.toLowerCase()}${chosen.id ? " id=" + chosen.id : ""}${chosen.className ? " class=\"" + chosen.className + "\"" : ""}>`;
+    const candLines = candidates.map(sel => {
+      const el = document.querySelector(sel);
+      const rendered = el && el.getClientRects().length;
+      return `${el ? (rendered ? "✅" : "⚠️ hidden") : "❌"}  ${sel}`;
+    }).join("\n");
+    const allIds = Array.from(document.querySelectorAll("[id]"))
+      .map(el => `#${el.id} <${el.tagName.toLowerCase()}>`).join("\n");
+    const box = document.createElement("div");
+    box.id = "twi-debug-box";
+    box.style.cssText = "position:relative;z-index:2147483647;margin:8px 12px;padding:12px;" +
+      "background:#000;color:#0f0;border:2px solid #0f0;border-radius:6px;" +
+      "font:11px/1.4 monospace;white-space:pre-wrap;word-break:break-all;" +
+      "max-height:60vh;overflow:auto;";
+    box.textContent =
+      "TWI DEBUG — send this whole box to Claude\n" +
+      "────────────────────────\n" +
+      "CHOSEN ANCHOR:\n" + chosenDesc + "\n\n" +
+      "CANDIDATES:\n" + candLines + "\n\n" +
+      "ALL ELEMENT IDs ON PAGE:\n" + (allIds || "(none)");
+    (chosen === document.body ? document.body : chosen).appendChild(box);
+  }
+  // ── END TEMP DIAGNOSTIC ─────────────────────────────────────────────────────
 
   function updateSettingsPanel() {
     const panel = document.getElementById("twi-alert-settings");

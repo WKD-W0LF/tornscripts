@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Faction_Calls (Universal)
 // @namespace    twilight-reborn
-// @version      2.2.1
+// @version      2.3.0
 // @author       Leandria & Wolf (Universal: Bob)
 // @description  Shared target calls, priorities and assist requests for Twilight - Reborn [56966]. Settings on Torn preferences page. Optimized for all devices.
 // @license      MIT
@@ -19,6 +19,10 @@
 // ==/UserScript==
 
 // ── Changelog ────────────────────────────────────────────────────────────────
+// v2.3.0 (2026-07-21) — Release: TornPDA (iOS) settings-panel placement fix
+//   (matches TWI Chain Alert v1.5.0). Panel anchors into the content column
+//   ([role=main]/.content-wrapper) and inserts directly after the native
+//   "General settings" card. War-page call buttons unchanged.
 // v2.2.1 (2026-07-21) — Real placement fix (confirmed on iPhone TornPDA):
 //   anchor into the content COLUMN ([role=main]/.content-wrapper) instead of
 //   #mainContainer (a flex wrapper that also holds the sidebar, where the panel

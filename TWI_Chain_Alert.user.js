@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.4.5
+// @version      1.5.0
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Settings on Torn preferences page. Banner visible on all Torn pages.
 // @license      MIT
@@ -17,33 +17,11 @@
 // ==/UserScript==
 
 // ── Changelog ────────────────────────────────────────────────────────────────
-// v1.4.5 (2026-07-21) — Real placement fix: anchor into the content COLUMN
-//   ([role=main]/.content-wrapper) instead of #mainContainer (a flex wrapper
-//   that also holds the sidebar, where the panel collapsed to nothing). Panel
-//   now inserted directly after the native "General settings" card. Debug box
-//   also reports the injected panel's parent + size to confirm.
-// v1.4.4 (2026-07-21) — TEMP: diagnostic now renders in a textarea with a
-//   "Copy debug text" button (mobile selection was closing before copy).
-// v1.4.3 (2026-07-21) — TEMP: always-on floating diagnostic (twiDebugFloat)
-//   shown on every page, reports location/pathname/isSettingsPage + anchors to
-//   diagnose why nothing injects in TornPDA. Remove block + interval call after.
-// v1.4.2 (2026-07-21) — TEMP: on-screen DOM diagnostic (twiDebugDumpDom) to
-//   identify TornPDA's content-column selector. Remove this block once pinned.
-// v1.4.1 (2026-07-21) — TornPDA (iOS) settings-panel placement fix
-//   - Root cause: the panel was inserted as a *sibling* after #react-root
-//     (or appended to document.body). On iOS Safari that lands in the empty
-//     area below the "General settings" card, but inside TornPDA's WKWebView
-//     the SPA re-renders after our first inject and/or the react-root sibling
-//     ends up outside the visible content column, so the panel never showed.
-//   - Fix: the panel is now inserted INTO the main content column
-//     (#mainContainer / .content-wrapper / [role=main] / react-root, first
-//     that exists) as its last child, so it inherits the page width and flows
-//     directly beneath the General settings card on every platform.
-//   - injectSettingsPage() is now self-healing: the 2s interval re-attaches the
-//     panel if TornPDA's SPA re-render detaches it, instead of the old
-//     "inject once and never touch again" guard.
-//   - Added addStyle() wrapper: falls back to a <style> element if GM_addStyle
-//     is unavailable/flaky in the embedded webview.
+// v1.5.0 (2026-07-21) — Release: TornPDA (iOS) settings-panel placement fix.
+//   Panel now anchors into the content column ([role=main]/.content-wrapper)
+//   and is inserted directly after the native "General settings" card, so it
+//   displays below it on iPhone TornPDA exactly as on iOS Safari. Added a
+//   GM_addStyle fallback for embedded webviews. (Rolls up v1.4.1-1.4.6.)
 // v1.3.2 (2026-07-20) — updated by Claude Sonnet
 //   - Cross-platform hardening pass (Apple/Android mobile+tablet, Safari/
 //     Chrome/Firefox desktop):
@@ -670,82 +648,6 @@
     renderAssignmentTable();
   }
 
-  // ── TEMP DIAGNOSTIC ─────────────────────────────────────────────────────────
-  // Floating box shown on EVERY page (fixed bottom, always visible), so we can
-  // see what URL TornPDA reports for the settings page and whether page
-  // detection / anchor selection is working. Remove this whole block + its call
-  // in the interval once the fix is confirmed.
-  function twiDebugFloat() {
-    let box = document.getElementById("twi-debug-box");
-    let ta, btn;
-    if (!box) {
-      box = document.createElement("div");
-      box.id = "twi-debug-box";
-      box.style.cssText = "position:fixed;left:0;right:0;bottom:0;z-index:2147483647;" +
-        "margin:0;padding:6px;background:#000;border-top:2px solid #0f0;";
-      btn = document.createElement("button");
-      btn.id = "twi-debug-copy";
-      btn.textContent = "📋 Copy debug text";
-      btn.style.cssText = "display:block;width:100%;margin:0 0 6px;padding:10px;" +
-        "background:#0a0;color:#000;border:none;border-radius:5px;" +
-        "font:bold 14px monospace;cursor:pointer;";
-      ta = document.createElement("textarea");
-      ta.id = "twi-debug-text";
-      ta.readOnly = true;
-      ta.style.cssText = "width:100%;height:32vh;box-sizing:border-box;resize:none;" +
-        "background:#000;color:#0f0;border:1px solid #0f0;border-radius:4px;" +
-        "font:10px/1.35 monospace;padding:6px;white-space:pre;";
-      btn.addEventListener("click", () => {
-        ta.focus(); ta.select(); ta.setSelectionRange(0, ta.value.length);
-        let ok = false;
-        try { ok = document.execCommand("copy"); } catch {}
-        if (navigator.clipboard) {
-          navigator.clipboard.writeText(ta.value).then(
-            () => { btn.textContent = "✅ Copied!"; },
-            () => { btn.textContent = ok ? "✅ Copied!" : "⚠️ Select the text manually & copy"; }
-          );
-        } else {
-          btn.textContent = ok ? "✅ Copied!" : "⚠️ Select the text manually & copy";
-        }
-        setTimeout(() => { btn.textContent = "📋 Copy debug text"; }, 2500);
-      });
-      box.appendChild(btn);
-      box.appendChild(ta);
-      (document.body || document.documentElement).appendChild(box);
-    } else {
-      ta = box.querySelector("#twi-debug-text");
-    }
-    const candidates = ["#mainContainer", ".content-wrapper", "[role='main']", "#react-root", "#root", "#app"];
-    const candLines = candidates.map(sel => {
-      const el = document.querySelector(sel);
-      const rendered = el && el.getClientRects().length;
-      return `${el ? (rendered ? "OK " : "hid") : "no "}  ${sel}`;
-    }).join("\n");
-    const p = document.getElementById("twi-alert-settings");
-    let panelInfo;
-    if (!p) {
-      panelInfo = "NOT INJECTED";
-    } else {
-      const r = p.getBoundingClientRect();
-      const par = p.parentElement;
-      panelInfo =
-        "parent: <" + (par ? par.tagName.toLowerCase() + (par.id ? "#" + par.id : "") +
-          (par.getAttribute("role") ? "[role=" + par.getAttribute("role") + "]" : "") : "?") + ">\n" +
-        "rect: " + Math.round(r.width) + "w x " + Math.round(r.height) + "h  top=" + Math.round(r.top);
-    }
-    const text =
-      "TWI DEBUG — go to Settings, then Copy and send to Claude\n" +
-      "───────────────\n" +
-      "href: " + location.href + "\n" +
-      "pathname: " + location.pathname + "\n" +
-      "isSettingsPage: " + isSettingsPage() + "\n\n" +
-      "PANEL:\n" + panelInfo + "\n\n" +
-      "ANCHOR CANDIDATES:\n" + candLines;
-    // Don't clobber the textarea while the user is selecting/focused in it.
-    if (ta && document.activeElement !== ta) ta.value = text;
-  }
-  // ── END TEMP DIAGNOSTIC ─────────────────────────────────────────────────────
-
   function updateSettingsPanel() {
     const panel = document.getElementById("twi-alert-settings");
     if (!panel) return;
@@ -809,7 +711,6 @@
 
   // 2s interval: drives cache-based banner on non-faction pages + chain observer recovery.
   setInterval(() => {
-    twiDebugFloat();   // TEMP DIAGNOSTIC — remove with the twiDebugFloat block
     if (isSettingsPage()) { injectSettingsPage(); return; }
     ensureBannerEl();
     if (!state.enabled) return;

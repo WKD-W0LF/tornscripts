@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Faction_Calls (Universal)
 // @namespace    twilight-reborn
-// @version      2.2.0
+// @version      2.2.1
 // @author       Leandria & Wolf (Universal: Bob)
 // @description  Shared target calls, priorities and assist requests for Twilight - Reborn [56966]. Settings on Torn preferences page. Optimized for all devices.
 // @license      MIT
@@ -19,6 +19,11 @@
 // ==/UserScript==
 
 // ── Changelog ────────────────────────────────────────────────────────────────
+// v2.2.1 (2026-07-21) — Real placement fix (confirmed on iPhone TornPDA):
+//   anchor into the content COLUMN ([role=main]/.content-wrapper) instead of
+//   #mainContainer (a flex wrapper that also holds the sidebar, where the panel
+//   collapsed to nothing). Panel now inserted directly after the native
+//   "General settings" card so it flows below it like the iOS Safari layout.
 // v2.2.0 (2026-07-21) — TornPDA (iOS) settings-panel placement fix
 //   - Root cause: the settings panel was inserted as a *sibling* after
 //     #react-root (or appended to document.body). On iOS Safari that lands in
@@ -752,11 +757,16 @@
   // where the SPA re-renders after the first inject and the react-root sibling
   // lands outside the visible content column.
 
+  // The content COLUMN (holds the page's cards), NOT #mainContainer — on modern
+  // Torn #mainContainer is a flex wrapper around the content column AND the
+  // sidebar (#sidebarroot). Appending to #mainContainer drops the panel into
+  // that flex row next to the sidebar where it collapses to nothing. Confirmed
+  // on iPhone TornPDA: [role=main] is the correct anchor.
   function findContentColumn() {
     const selectors = [
-      "#mainContainer",      // legacy Torn outer content column (most stable)
+      "[role='main']",       // semantic content column (excludes sidebar)
       ".content-wrapper",    // React content wrapper
-      "[role='main']",
+      "#mainContainer",      // outer flex wrapper (last resort before body)
       "#react-root",
       "#root",
       "#app"
@@ -768,16 +778,39 @@
     return document.body || document.documentElement;
   }
 
+  // Locate the native "General settings" card so we can drop our panel directly
+  // after it (matching the desktop/Safari layout).
+  function findSettingsCard(column) {
+    const labels = ["update settings", "general settings"];
+    const els = column.querySelectorAll("button, input[type=submit], input[type=button], a, h1, h2, h3, h4");
+    let hit = null;
+    for (const el of els) {
+      const t = (el.textContent || el.value || "").trim().toLowerCase();
+      if (labels.includes(t)) { hit = el; break; }
+    }
+    if (!hit) return null;
+    let node = hit;
+    while (node.parentElement && node.parentElement !== column) node = node.parentElement;
+    return node.parentElement === column ? node : null;
+  }
+
+  function placePanel(panel, column) {
+    const card = findSettingsCard(column);
+    if (card && card.nextSibling !== panel) {
+      card.insertAdjacentElement("afterend", panel);   // directly below the card
+    } else if (!card && panel.parentElement !== column) {
+      column.appendChild(panel);                        // fallback: end of column
+    }
+  }
+
   function injectSettingsPage() {
-    const anchor = findContentColumn();
+    const column = findContentColumn();
     const existing = document.getElementById("twi-settings-details");
 
     if (existing) {
       // Self-heal: TornPDA's SPA re-render can detach or reparent our panel.
-      if (!document.body.contains(existing)) {
-        anchor.appendChild(existing);
-      } else if (existing.parentElement !== anchor && !anchor.contains(existing)) {
-        anchor.appendChild(existing);
+      if (!document.body.contains(existing) || !column.contains(existing)) {
+        placePanel(existing, column);
       }
       return;
     }
@@ -785,7 +818,7 @@
     const panel = document.createElement("div");
     panel.id = "twi-settings-details";
     panel.innerHTML = buildSettingsPanelHTML();
-    anchor.appendChild(panel);
+    placePanel(panel, column);
 
     wireSettingsPanel(panel);
     updateSettingsPanel();

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.4.4
+// @version      1.4.5
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Settings on Torn preferences page. Banner visible on all Torn pages.
 // @license      MIT
@@ -17,6 +17,11 @@
 // ==/UserScript==
 
 // ── Changelog ────────────────────────────────────────────────────────────────
+// v1.4.5 (2026-07-21) — Real placement fix: anchor into the content COLUMN
+//   ([role=main]/.content-wrapper) instead of #mainContainer (a flex wrapper
+//   that also holds the sidebar, where the panel collapsed to nothing). Panel
+//   now inserted directly after the native "General settings" card. Debug box
+//   also reports the injected panel's parent + size to confirm.
 // v1.4.4 (2026-07-21) — TEMP: diagnostic now renders in a textarea with a
 //   "Copy debug text" button (mobile selection was closing before copy).
 // v1.4.3 (2026-07-21) — TEMP: always-on floating diagnostic (twiDebugFloat)
@@ -595,11 +600,16 @@
   // where the SPA re-renders after the first inject and the react-root sibling
   // lands outside the visible content column.
 
+  // The content COLUMN (the part that holds the page's cards), NOT #mainContainer
+  // — on modern Torn #mainContainer is a flex wrapper around the content column
+  // AND the sidebar (#sidebarroot). Appending to #mainContainer drops the panel
+  // into that flex row next to the sidebar where it collapses to nothing. We
+  // want the inner content column so the panel flows below the settings cards.
   function findContentColumn() {
     const selectors = [
-      "#mainContainer",      // legacy Torn outer content column (most stable)
+      "[role='main']",       // semantic content column (excludes sidebar)
       ".content-wrapper",    // React content wrapper
-      "[role='main']",
+      "#mainContainer",      // outer flex wrapper (last resort before body)
       "#react-root",
       "#root",
       "#app"
@@ -611,18 +621,41 @@
     return document.body || document.documentElement;
   }
 
+  // Locate the native "General settings" card so we can drop our panel directly
+  // after it (matching the desktop/Safari layout). We find the "Update settings"
+  // button (or "General settings" heading) inside the column, then walk up to
+  // the card that is a direct child of the column.
+  function findSettingsCard(column) {
+    const labels = ["update settings", "general settings"];
+    const els = column.querySelectorAll("button, input[type=submit], input[type=button], a, h1, h2, h3, h4");
+    let hit = null;
+    for (const el of els) {
+      const t = (el.textContent || el.value || "").trim().toLowerCase();
+      if (labels.includes(t)) { hit = el; break; }
+    }
+    if (!hit) return null;
+    let node = hit;
+    while (node.parentElement && node.parentElement !== column) node = node.parentElement;
+    return node.parentElement === column ? node : null;
+  }
+
+  function placePanel(panel, column) {
+    const card = findSettingsCard(column);
+    if (card && card.nextSibling !== panel) {
+      card.insertAdjacentElement("afterend", panel);   // directly below the card
+    } else if (!card && panel.parentElement !== column) {
+      column.appendChild(panel);                        // fallback: end of column
+    }
+  }
+
   function injectSettingsPage() {
-    const anchor = findContentColumn();
+    const column = findContentColumn();
     const existing = document.getElementById("twi-alert-settings");
 
     if (existing) {
       // Self-heal: TornPDA's SPA re-render can detach or reparent our panel.
-      // Re-attach it to the content column if it fell out of the DOM, or if it
-      // ended up somewhere other than inside the current content column.
-      if (!document.body.contains(existing)) {
-        anchor.appendChild(existing);
-      } else if (existing.parentElement !== anchor && !anchor.contains(existing)) {
-        anchor.appendChild(existing);
+      if (!document.body.contains(existing) || !column.contains(existing)) {
+        placePanel(existing, column);
       }
       return;
     }
@@ -630,7 +663,7 @@
     const panel = document.createElement("div");
     panel.id = "twi-alert-settings";
     panel.innerHTML = buildSettingsPanelHTML();
-    anchor.appendChild(panel);
+    placePanel(panel, column);
 
     wireSettingsPanel(panel);
     updateSettingsPanel();
@@ -688,19 +721,26 @@
       const rendered = el && el.getClientRects().length;
       return `${el ? (rendered ? "OK " : "hid") : "no "}  ${sel}`;
     }).join("\n");
-    const structuralIds = Array.from(document.querySelectorAll("body [id]"))
-      .filter(el => el.getClientRects().length)                 // visible only
-      .slice(0, 40)
-      .map(el => `#${el.id} <${el.tagName.toLowerCase()}>`).join("\n");
+    const p = document.getElementById("twi-alert-settings");
+    let panelInfo;
+    if (!p) {
+      panelInfo = "NOT INJECTED";
+    } else {
+      const r = p.getBoundingClientRect();
+      const par = p.parentElement;
+      panelInfo =
+        "parent: <" + (par ? par.tagName.toLowerCase() + (par.id ? "#" + par.id : "") +
+          (par.getAttribute("role") ? "[role=" + par.getAttribute("role") + "]" : "") : "?") + ">\n" +
+        "rect: " + Math.round(r.width) + "w x " + Math.round(r.height) + "h  top=" + Math.round(r.top);
+    }
     const text =
       "TWI DEBUG — go to Settings, then Copy and send to Claude\n" +
       "───────────────\n" +
       "href: " + location.href + "\n" +
       "pathname: " + location.pathname + "\n" +
-      "hash: " + (location.hash || "(none)") + "\n" +
       "isSettingsPage: " + isSettingsPage() + "\n\n" +
-      "ANCHOR CANDIDATES:\n" + candLines + "\n\n" +
-      "VISIBLE IDs (first 40):\n" + (structuralIds || "(none)");
+      "PANEL:\n" + panelInfo + "\n\n" +
+      "ANCHOR CANDIDATES:\n" + candLines;
     // Don't clobber the textarea while the user is selecting/focused in it.
     if (ta && document.activeElement !== ta) ta.value = text;
   }

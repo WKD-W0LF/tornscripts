@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TWI Chain Alert
 // @namespace    twilight-reborn
-// @version      1.4.3
+// @version      1.4.4
 // @author       WKD-W0LF
 // @description  Chain bonus countdown alerts for Twilight-Reborn [56966]. Settings on Torn preferences page. Banner visible on all Torn pages.
 // @license      MIT
@@ -17,6 +17,8 @@
 // ==/UserScript==
 
 // ── Changelog ────────────────────────────────────────────────────────────────
+// v1.4.4 (2026-07-21) — TEMP: diagnostic now renders in a textarea with a
+//   "Copy debug text" button (mobile selection was closing before copy).
 // v1.4.3 (2026-07-21) — TEMP: always-on floating diagnostic (twiDebugFloat)
 //   shown on every page, reports location/pathname/isSettingsPage + anchors to
 //   diagnose why nothing injects in TornPDA. Remove block + interval call after.
@@ -642,14 +644,43 @@
   // in the interval once the fix is confirmed.
   function twiDebugFloat() {
     let box = document.getElementById("twi-debug-box");
+    let ta, btn;
     if (!box) {
       box = document.createElement("div");
       box.id = "twi-debug-box";
       box.style.cssText = "position:fixed;left:0;right:0;bottom:0;z-index:2147483647;" +
-        "max-height:45vh;overflow:auto;margin:0;padding:8px 10px;" +
-        "background:#000;color:#0f0;border-top:2px solid #0f0;" +
-        "font:10px/1.35 monospace;white-space:pre-wrap;word-break:break-all;";
+        "margin:0;padding:6px;background:#000;border-top:2px solid #0f0;";
+      btn = document.createElement("button");
+      btn.id = "twi-debug-copy";
+      btn.textContent = "📋 Copy debug text";
+      btn.style.cssText = "display:block;width:100%;margin:0 0 6px;padding:10px;" +
+        "background:#0a0;color:#000;border:none;border-radius:5px;" +
+        "font:bold 14px monospace;cursor:pointer;";
+      ta = document.createElement("textarea");
+      ta.id = "twi-debug-text";
+      ta.readOnly = true;
+      ta.style.cssText = "width:100%;height:32vh;box-sizing:border-box;resize:none;" +
+        "background:#000;color:#0f0;border:1px solid #0f0;border-radius:4px;" +
+        "font:10px/1.35 monospace;padding:6px;white-space:pre;";
+      btn.addEventListener("click", () => {
+        ta.focus(); ta.select(); ta.setSelectionRange(0, ta.value.length);
+        let ok = false;
+        try { ok = document.execCommand("copy"); } catch {}
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(ta.value).then(
+            () => { btn.textContent = "✅ Copied!"; },
+            () => { btn.textContent = ok ? "✅ Copied!" : "⚠️ Select the text manually & copy"; }
+          );
+        } else {
+          btn.textContent = ok ? "✅ Copied!" : "⚠️ Select the text manually & copy";
+        }
+        setTimeout(() => { btn.textContent = "📋 Copy debug text"; }, 2500);
+      });
+      box.appendChild(btn);
+      box.appendChild(ta);
       (document.body || document.documentElement).appendChild(box);
+    } else {
+      ta = box.querySelector("#twi-debug-text");
     }
     const candidates = ["#mainContainer", ".content-wrapper", "[role='main']", "#react-root", "#root", "#app"];
     const candLines = candidates.map(sel => {
@@ -661,8 +692,8 @@
       .filter(el => el.getClientRects().length)                 // visible only
       .slice(0, 40)
       .map(el => `#${el.id} <${el.tagName.toLowerCase()}>`).join("\n");
-    box.textContent =
-      "TWI DEBUG — go to Settings, then send this box to Claude\n" +
+    const text =
+      "TWI DEBUG — go to Settings, then Copy and send to Claude\n" +
       "───────────────\n" +
       "href: " + location.href + "\n" +
       "pathname: " + location.pathname + "\n" +
@@ -670,6 +701,8 @@
       "isSettingsPage: " + isSettingsPage() + "\n\n" +
       "ANCHOR CANDIDATES:\n" + candLines + "\n\n" +
       "VISIBLE IDs (first 40):\n" + (structuralIds || "(none)");
+    // Don't clobber the textarea while the user is selecting/focused in it.
+    if (ta && document.activeElement !== ta) ta.value = text;
   }
   // ── END TEMP DIAGNOSTIC ─────────────────────────────────────────────────────
 
